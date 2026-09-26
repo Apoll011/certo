@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -8,7 +9,7 @@ import 'package:flutter/material.dart';
 import '../services/elevenlabs_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Design tokens – dark navy voice palette
+//  Design tokens – dark navy voice palette matching mockup
 // ─────────────────────────────────────────────────────────────────────────────
 class _VC {
   static const bg = Color(0xFF0D1B2E);
@@ -26,7 +27,7 @@ class _VC {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Random AI phrases
+//  Random AI phrases to speak after transcribing
 // ─────────────────────────────────────────────────────────────────────────────
 const _randomPhrases = [
   "Got it! I'll keep that in mind for your next dose.",
@@ -77,6 +78,7 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
   // ── services ────────────────────────────────────────────────────────────
   late final ElevenLabsService _svc;
   StreamSubscription<VoiceEvent>? _eventSub;
+  StreamSubscription? _playerCompleteSub;
   final AudioPlayer _player = AudioPlayer();
 
   // ── session state ────────────────────────────────────────────────────────
@@ -84,7 +86,9 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
   String _partialText = '';
   String _finalText = '';
   String _aiResponse = '';
+  String? _errorText;
   final List<int> _audioBuffer = [];
+  Timer? _silenceTimer;
 
   // ── orb animation: gentle float + scale ──────────────────────────────────
   late final AnimationController _orbCtrl;
@@ -156,15 +160,22 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
   void _initVoice() {
     _svc = ElevenLabsService();
     _eventSub = _svc.events.listen(_onEvent);
+    _playerCompleteSub = _player.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() => _phase = _VoicePhase.idle);
+      }
+    });
     _svc.startListening();
   }
 
   @override
   void dispose() {
+    _silenceTimer?.cancel();
     _orbCtrl.dispose();
     _morphCtrl.dispose();
     _waveCtrl.dispose();
     _eventSub?.cancel();
+    _playerCompleteSub?.cancel();
     _svc.dispose();
     _player.dispose();
     super.dispose();
@@ -175,15 +186,26 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
     if (!mounted) return;
     switch (event) {
       case TranscriptionPartial(:final text):
-        setState(() => _partialText = text);
+        _silenceTimer?.cancel();
+        setState(() {
+          _partialText = text;
+          _errorText = null;
+        });
 
       case TranscriptionFinal(:final text):
+        _silenceTimer?.cancel();
         if (text.trim().isEmpty) return;
         setState(() {
-          _finalText = (_finalText.isEmpty ? '' : '$_finalText ') + text;
+          _finalText = (_finalText.isEmpty ? '' : '$_finalText ') + text.trim();
           _partialText = '';
+          _errorText = null;
         });
-        _finishListening();
+        // Give 1.8 seconds of silence after speech before automatically replying
+        _silenceTimer = Timer(const Duration(milliseconds: 1800), () {
+          if (mounted && _phase == _VoicePhase.listening) {
+            _finishListening();
+          }
+        });
 
       case TtsAudioChunk(:final bytes):
         _audioBuffer.addAll(bytes);
@@ -191,43 +213,71 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
       case TtsDone():
         _playBufferedAudio();
 
-      case VoiceError():
-        setState(() => _phase = _VoicePhase.idle);
+      case VoiceError(:final message):
+        debugPrint('VoiceMode UI error: $message');
+        setState(() {
+          _errorText = message;
+        });
     }
   }
 
   Future<void> _finishListening() async {
     if (_phase != _VoicePhase.listening) return;
+    _silenceTimer?.cancel();
     setState(() => _phase = _VoicePhase.thinking);
     _waveCtrl.stop();
     await _svc.stopListening();
+
     final phrase = _randomPhrase();
     setState(() => _aiResponse = phrase);
     await _svc.speak(phrase);
   }
 
   Future<void> _playBufferedAudio() async {
+    if (_audioBuffer.isEmpty) {
+      debugPrint('VoiceMode: audio buffer is empty');
+      setState(() => _phase = _VoicePhase.idle);
+      return;
+    }
+
     setState(() => _phase = _VoicePhase.speaking);
     final bytes = Uint8List.fromList(_audioBuffer);
     _audioBuffer.clear();
-    await _player.play(BytesSource(bytes));
-    _player.onPlayerComplete.listen((_) {
-      if (mounted) setState(() => _phase = _VoicePhase.idle);
-    });
+
+    try {
+      final tempFile = File(
+        '${Directory.systemTemp.path}/eleven_tts_${DateTime.now().millisecondsSinceEpoch}.mp3',
+      );
+      await tempFile.writeAsBytes(bytes, flush: true);
+      debugPrint('VoiceMode: playing via DeviceFileSource (${tempFile.path})');
+      await _player.play(DeviceFileSource(tempFile.path));
+    } catch (e) {
+      debugPrint('VoiceMode: DeviceFileSource failed ($e), falling back to BytesSource');
+      try {
+        await _player.play(BytesSource(bytes));
+      } catch (err) {
+        debugPrint('VoiceMode: BytesSource error: $err');
+        if (mounted) setState(() => _phase = _VoicePhase.idle);
+      }
+    }
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────
   String get _displayTranscript {
+    if (_finalText.isNotEmpty && _partialText.isNotEmpty) {
+      return '"$_finalText $_partialText"';
+    }
     if (_finalText.isNotEmpty) return '"$_finalText"';
     if (_partialText.isNotEmpty) return '"$_partialText"';
     return '';
   }
 
   String get _phaseLabel {
+    if (_errorText != null) return 'Something went wrong';
     return switch (_phase) {
       _VoicePhase.listening => 'Listening...',
       _VoicePhase.thinking => 'Thinking...',
-      _VoicePhase.speaking => _aiResponse,
+      _VoicePhase.speaking => 'Speaking...',
       _VoicePhase.idle => 'Done',
     };
   }
@@ -257,14 +307,21 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
 
             const Spacer(flex: 2),
 
-            // ── orb ────────────────────────────────────────────────────────
-            AnimatedBuilder(
-              animation: Listenable.merge([_orbCtrl, _morphCtrl]),
-              builder: (context, child) => Transform.translate(
-                offset: Offset(0, _orbFloat.value),
-                child: Transform.scale(
-                  scale: _orbScale.value,
-                  child: _GlassOrb(morphT: _morphAnim.value),
+            // ── orb (tap to commit speech / reply) ─────────────────────────
+            GestureDetector(
+              onTap: () {
+                if (_phase == _VoicePhase.listening) {
+                  _finishListening();
+                }
+              },
+              child: AnimatedBuilder(
+                animation: Listenable.merge([_orbCtrl, _morphCtrl]),
+                builder: (context, child) => Transform.translate(
+                  offset: Offset(0, _orbFloat.value),
+                  child: Transform.scale(
+                    scale: _orbScale.value,
+                    child: _GlassOrb(morphT: _morphAnim.value),
+                  ),
                 ),
               ),
             ),
@@ -277,8 +334,8 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
               child: Text(
                 _phaseLabel,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _VC.textPrimary,
+                style: TextStyle(
+                  color: _errorText != null ? const Color(0xFFFF6B6B) : _VC.textPrimary,
                   fontSize: 26,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.3,
@@ -288,8 +345,50 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
 
             const SizedBox(height: 10),
 
-            // ── transcript ─────────────────────────────────────────────────
-            if (_displayTranscript.isNotEmpty)
+            // ── transcript / AI speech / error display ───────────────────────
+            if (_errorText != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B1520),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF8B263E)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Color(0xFFFF6B6B), size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _errorText!,
+                          style: const TextStyle(
+                            color: Color(0xFFFFD1D1),
+                            fontSize: 13,
+                            height: 1.3,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (_phase == _VoicePhase.speaking && _aiResponse.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                child: Text(
+                  '"$_aiResponse"',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _VC.orbHighlight,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    height: 1.5,
+                  ),
+                ),
+              )
+            else if (_displayTranscript.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 40),
                 child: Text(
@@ -307,15 +406,22 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
             const SizedBox(height: 28),
 
             // ── waveform ───────────────────────────────────────────────────
-            _WaveformBars(
-              anims: _barAnims,
-              active: _phase == _VoicePhase.listening,
+            GestureDetector(
+              onTap: () {
+                if (_phase == _VoicePhase.listening) {
+                  _finishListening();
+                }
+              },
+              child: _WaveformBars(
+                anims: _barAnims,
+                active: _phase == _VoicePhase.listening,
+              ),
             ),
 
             const Spacer(flex: 3),
 
             // ── suggestions card ───────────────────────────────────────────
-            _SuggestionsCard(),
+            const _SuggestionsCard(),
 
             const SizedBox(height: 24),
           ],
@@ -524,15 +630,15 @@ class _SuggestionsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               children: [
                 Icon(
                   Icons.help_outline_rounded,
                   color: _VC.textSub,
                   size: 16,
                 ),
-                const SizedBox(width: 8),
-                const Text(
+                SizedBox(width: 8),
+                Text(
                   'You can also say:',
                   style: TextStyle(
                     color: _VC.textPrimary,

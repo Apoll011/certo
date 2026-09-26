@@ -26,7 +26,7 @@ class AppConfig {
   /// Override via --dart-define=ELEVENLABS_VOICE_ID=...
   static const String elevenLabsVoiceId = String.fromEnvironment(
     'ELEVENLABS_VOICE_ID',
-    defaultValue: 'cgSgspJ2msm6clMCkdW9', // Jessica — conversational
+    defaultValue: 'wWWn96OtTHu1sn8SRGEr', // Jessica — conversational
   );
 
   /// ElevenLabs TTS model: "eleven_v3" = Conversacional v3.

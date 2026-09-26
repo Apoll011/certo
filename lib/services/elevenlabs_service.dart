@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/app_config.dart';
@@ -39,21 +41,12 @@ class VoiceError extends VoiceEvent {
 }
 
 /// Manages ElevenLabs STT (Scribe v2 Realtime) and TTS (eleven_v3) sessions.
-///
-/// Usage:
-/// ```dart
-/// final svc = ElevenLabsService();
-/// svc.events.listen((e) { ... });
-/// await svc.startListening();        // begins STT session
-/// await svc.stopListening();         // ends STT, gets final transcript
-/// await svc.speak("Hello world!");   // streams TTS audio
-/// svc.dispose();
-/// ```
 class ElevenLabsService {
   ElevenLabsService();
 
-  static const String _sttEndpoint =
-      'wss://api.elevenlabs.io/v1/speech-to-text/stream';
+  // Official ElevenLabs Scribe v2 Realtime WebSocket endpoint
+  static const String _sttHost = 'api.elevenlabs.io';
+  static const String _sttPath = '/v1/speech-to-text/realtime';
 
   static const String _ttsEndpoint =
       'https://api.elevenlabs.io/v1/text-to-speech';
@@ -72,91 +65,151 @@ class ElevenLabsService {
 
   // ── STT ────────────────────────────────────────────────────────────────────
 
-  /// Starts a Scribe v2 Realtime session and streams mic audio.
+  /// Starts a Scribe v2 Realtime session and streams mic audio over WebSocket.
   Future<void> startListening() async {
     if (_listening) return;
 
     final apiKey = AppConfig.elevenLabsApiKey;
     if (apiKey.isEmpty) {
-      _emit(VoiceError('ElevenLabs API key not configured'));
+      _emit(VoiceError(
+        'ElevenLabs API key is missing. Set ELEVENLABS_API_KEY with --dart-define.',
+      ));
       return;
     }
 
     // Check mic permission.
-    if (!await _recorder.hasPermission()) {
-      _emit(VoiceError('Microphone permission denied'));
+    try {
+      final hasPerm = await _recorder.hasPermission();
+      if (!hasPerm) {
+        _emit(VoiceError('Microphone permission denied. Please allow microphone access in settings.'));
+        return;
+      }
+    } catch (e) {
+      _emit(VoiceError('Failed to check microphone permission: $e'));
       return;
     }
 
-    // Open WebSocket to Scribe v2 Realtime endpoint.
-    final uri = Uri.parse(
-      '$_sttEndpoint?model_id=${AppConfig.elevenLabsSttModel}'
-      '&language=en'
-      '&sample_rate=16000'
-      '&encoding=pcm_s16le'
-      '&inactivity_timeout=60',
+    // Scribe v2 Realtime WebSocket URI:
+    // wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&audio_format=pcm_16000
+    final uri = Uri(
+      scheme: 'wss',
+      host: _sttHost,
+      path: _sttPath,
+      queryParameters: {
+        'model_id': AppConfig.elevenLabsSttModel,
+        'audio_format': 'pcm_16000',
+      },
     );
 
     try {
-      _wsChannel = WebSocketChannel.connect(
+      debugPrint('ElevenLabs STT: connecting to $uri ...');
+      _wsChannel = IOWebSocketChannel.connect(
         uri,
-        protocols: const [],
+        headers: {'xi-api-key': apiKey},
+        pingInterval: const Duration(seconds: 15),
       );
 
-      // Send auth handshake as first message.
-      _wsChannel!.sink.add(
-        jsonEncode({'type': 'authorization', 'authorization': apiKey}),
-      );
+      // Wait for handshake
+      await _wsChannel!.ready;
+      debugPrint('ElevenLabs STT: WebSocket connected successfully!');
+    } on WebSocketChannelException catch (e) {
+      debugPrint('ElevenLabs STT: WebSocketChannelException: $e');
+      _emit(VoiceError('STT connection error: $e'));
+      _wsChannel = null;
+      return;
     } catch (e) {
-      _emit(VoiceError('Failed to connect to STT: $e'));
+      debugPrint('ElevenLabs STT: Connection failed: $e');
+      _emit(VoiceError('STT connection failed: $e'));
+      _wsChannel = null;
       return;
     }
 
     _wsSub = _wsChannel!.stream.listen(
       _onSttMessage,
-      onError: (e) => _emit(VoiceError('STT WebSocket error: $e')),
-      onDone: () => _listening = false,
+      onError: (Object e) {
+        debugPrint('ElevenLabs STT: Stream error: $e');
+        _emit(VoiceError('STT stream error: $e'));
+      },
+      onDone: () {
+        debugPrint('ElevenLabs STT: WebSocket closed by server');
+        _listening = false;
+      },
     );
 
     // Start mic recording as raw PCM stream (16-bit, 16kHz, mono).
-    final audioStream = await _recorder.startStream(
-      const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: 16000,
-        numChannels: 1,
-      ),
-    );
-
-    _audioSub = audioStream.listen((chunk) {
-      if (_wsChannel == null) return;
-      // Send as base64-encoded audio chunk.
-      _wsChannel!.sink.add(
-        jsonEncode({
-          'type': 'audio_chunk',
-          'audio_chunk': base64Encode(chunk),
-        }),
+    try {
+      final audioStream = await _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
       );
-    });
 
-    _listening = true;
-    debugPrint('ElevenLabs STT: listening started');
+      _audioSub = audioStream.listen((chunk) {
+        if (_wsChannel == null) return;
+        // ElevenLabs Scribe v2 Realtime expects:
+        // {"message_type": "input_audio_chunk", "audio_base_64": "..."}
+        try {
+          _wsChannel!.sink.add(
+            jsonEncode({
+              'message_type': 'input_audio_chunk',
+              'audio_base_64': base64Encode(chunk),
+            }),
+          );
+        } catch (e) {
+          debugPrint('ElevenLabs STT: failed to send audio chunk: $e');
+        }
+      });
+
+      _listening = true;
+      debugPrint('ElevenLabs STT: microphone streaming started');
+    } catch (e) {
+      debugPrint('ElevenLabs STT: failed to start mic recorder: $e');
+      _emit(VoiceError('Microphone recording failed: $e'));
+      await stopListening();
+    }
   }
 
   void _onSttMessage(dynamic raw) {
     try {
       final msg = jsonDecode(raw as String) as Map<String, dynamic>;
-      final type = msg['type'] as String?;
+      final msgType = (msg['message_type'] as String?) ?? (msg['type'] as String?);
 
-      if (type == 'transcript') {
-        final text = (msg['transcript'] as String?) ?? '';
-        final isFinal = msg['is_final'] == true;
-        if (text.isEmpty) return;
-        _emit(isFinal ? TranscriptionFinal(text) : TranscriptionPartial(text));
-      } else if (type == 'error') {
-        _emit(VoiceError(msg['message'] as String? ?? 'STT error'));
+      debugPrint('ElevenLabs STT received: $msgType');
+
+      switch (msgType) {
+        case 'session_started':
+          debugPrint('ElevenLabs STT: session started: ${msg['session_id']}');
+
+        case 'partial_transcript':
+          final text = (msg['text'] as String?) ?? '';
+          if (text.isNotEmpty) {
+            _emit(TranscriptionPartial(text));
+          }
+
+        case 'committed_transcript':
+          final text = (msg['text'] as String?) ?? '';
+          if (text.isNotEmpty) {
+            _emit(TranscriptionFinal(text));
+          }
+
+        case 'rate_limited':
+        case 'error':
+          final err = (msg['error'] as String?) ??
+              (msg['message'] as String?) ??
+              'STT error ($msgType)';
+          debugPrint('ElevenLabs STT error: $err');
+          _emit(VoiceError(err));
+
+        case 'warning':
+          debugPrint('ElevenLabs STT warning: ${msg['warning']}');
+
+        default:
+          debugPrint('ElevenLabs STT unhandled message: $raw');
       }
     } catch (e) {
-      debugPrint('ElevenLabs STT: malformed message — $e');
+      debugPrint('ElevenLabs STT: malformed message: $e — $raw');
     }
   }
 
@@ -168,16 +221,27 @@ class ElevenLabsService {
     await _audioSub?.cancel();
     _audioSub = null;
 
-    await _recorder.stop();
-
-    // Ask the server to flush any buffered audio.
     try {
-      _wsChannel?.sink.add(jsonEncode({'type': 'end_of_input'}));
+      await _recorder.stop();
     } catch (_) {}
+
+    // Ask server to commit any remaining audio
+    try {
+      _wsChannel?.sink.add(jsonEncode({
+        'message_type': 'input_audio_chunk',
+        'audio_base_64': '',
+        'commit': true,
+      }));
+    } catch (_) {}
+
+    // Give server a brief window to commit
+    await Future<void>.delayed(const Duration(milliseconds: 300));
 
     await _wsSub?.cancel();
     _wsSub = null;
-    await _wsChannel?.sink.close();
+    try {
+      await _wsChannel?.sink.close(WebSocketStatus.normalClosure);
+    } catch (_) {}
     _wsChannel = null;
     debugPrint('ElevenLabs STT: listening stopped');
   }
@@ -189,16 +253,38 @@ class ElevenLabsService {
   Future<void> speak(String text) async {
     final apiKey = AppConfig.elevenLabsApiKey;
     if (apiKey.isEmpty) {
-      _emit(VoiceError('ElevenLabs API key not configured'));
+      _emit(VoiceError('ElevenLabs API key missing'));
       return;
     }
 
     final voiceId = AppConfig.elevenLabsVoiceId;
     final url = Uri.parse('$_ttsEndpoint/$voiceId/stream');
 
+    // First try with eleven_v3
+    var modelId = AppConfig.elevenLabsTtsModel;
+    bool success = await _fetchTtsStream(url, apiKey, text, modelId);
+
+    // If eleven_v3 is not available on this tier, gracefully fall back to eleven_multilingual_v2
+    if (!success && modelId == 'eleven_v3') {
+      debugPrint('ElevenLabs TTS: eleven_v3 failed, falling back to eleven_multilingual_v2...');
+      modelId = 'eleven_multilingual_v2';
+      success = await _fetchTtsStream(url, apiKey, text, modelId);
+    }
+
+    if (!success) {
+      _emit(VoiceError('TTS synthesis failed'));
+    }
+  }
+
+  Future<bool> _fetchTtsStream(
+    Uri url,
+    String apiKey,
+    String text,
+    String modelId,
+  ) async {
     final body = jsonEncode({
       'text': text,
-      'model_id': AppConfig.elevenLabsTtsModel,
+      'model_id': modelId,
       'voice_settings': {
         'stability': 0.5,
         'similarity_boost': 0.75,
@@ -215,12 +301,13 @@ class ElevenLabsService {
         ..headers['Accept'] = 'audio/mpeg'
         ..body = body;
 
+      debugPrint('ElevenLabs TTS: requesting speech with model $modelId...');
       final response = await request.send();
 
       if (response.statusCode != 200) {
         final bodyStr = await response.stream.bytesToString();
-        _emit(VoiceError('TTS error ${response.statusCode}: $bodyStr'));
-        return;
+        debugPrint('ElevenLabs TTS error ${response.statusCode}: $bodyStr');
+        return false;
       }
 
       await for (final chunk in response.stream) {
@@ -228,9 +315,11 @@ class ElevenLabsService {
       }
 
       _emit(TtsDone());
-      debugPrint('ElevenLabs TTS: done');
+      debugPrint('ElevenLabs TTS: streaming finished successfully');
+      return true;
     } catch (e) {
-      _emit(VoiceError('TTS request failed: $e'));
+      debugPrint('ElevenLabs TTS exception: $e');
+      return false;
     }
   }
 
