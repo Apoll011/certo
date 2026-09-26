@@ -38,6 +38,14 @@ class TtsDone extends VoiceEvent {}
 /// User speech detected while TTS was playing (barge-in).
 class BargeInDetected extends VoiceEvent {}
 
+/// Live microphone amplitude (0–1) while STT is listening.
+///
+/// Used by the voice orb to expand/contract with speech energy.
+class VoiceAmplitude extends VoiceEvent {
+  VoiceAmplitude(this.level);
+  final double level;
+}
+
 /// An error occurred.
 class VoiceError extends VoiceEvent {
   VoiceError(this.message);
@@ -85,6 +93,7 @@ class ElevenLabsService {
   /// fighting the STT recorder lifecycle.
   final AudioRecorder _bargeRecorder = AudioRecorder();
   StreamSubscription<Uint8List>? _audioSub;
+  DateTime? _lastAmplitudeEmit;
 
   bool _listening = false;
   bool get isListening => _listening;
@@ -192,6 +201,16 @@ class ElevenLabsService {
 
       _audioSub = audioStream.listen((chunk) {
         if (_wsChannel == null) return;
+        // Throttle orb amplitude updates (~20 fps) so UI stays smooth.
+        final now = DateTime.now();
+        if (_lastAmplitudeEmit == null ||
+            now.difference(_lastAmplitudeEmit!) >
+                const Duration(milliseconds: 50)) {
+          _lastAmplitudeEmit = now;
+          final rms = _pcm16Rms(chunk);
+          final level = (rms / 0.12).clamp(0.0, 1.0);
+          _emit(VoiceAmplitude(level));
+        }
         // Scribe realtime requires commit + sample_rate on every chunk.
         try {
           _wsChannel!.sink.add(

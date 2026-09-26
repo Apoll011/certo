@@ -31,11 +31,11 @@ class VerifiBottomNavBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final wide = MediaQuery.sizeOf(context).width >= AppBreakpoints.medium;
 
-    // Phone: 64 / overflows ~18. Tablet: 80 / overflows ~28.
-    final micSize = wide ? 80.0 : 64.0;
-    final micOverlap = wide ? 28.0 : 18.0;
+    // Phone: 76 / overflows ~22. Tablet: 92 / overflows ~32.
+    final micSize = wide ? 92.0 : 76.0;
+    final micOverlap = wide ? 32.0 : 22.0;
     final barHeight = wide ? 72.0 : 64.0;
-    final micSlot = micSize + 12;
+    final micSlot = micSize + 16;
 
     return Material(
       color: Colors.transparent,
@@ -215,38 +215,69 @@ class _MicButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final iconSize = size * 0.42;
+    final iconSize = size * 0.40;
+    final ring = size * 0.055;
 
     return Semantics(
       button: true,
       label: tooltip,
       child: Tooltip(
         message: tooltip,
-        child: Material(
-          color: Colors.transparent,
-          elevation: 0,
-          child: InkWell(
-            onTap: onTap,
-            customBorder: const CircleBorder(),
-            child: Ink(
-              width: size,
-              height: size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: scheme.primary,
-                border: Border.all(color: scheme.surface, width: 4),
-                boxShadow: [
-                  BoxShadow(
-                    color: scheme.primary.withValues(alpha: 0.28),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: DecoratedBox(
+            // Soft circular glow only — no Material elevation (avoids the
+            // rectangular shadow/clip artifact behind the mic).
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: scheme.primary.withValues(alpha: 0.32),
+                  blurRadius: 22,
+                  spreadRadius: 1,
+                  offset: const Offset(0, 8),
+                ),
+                BoxShadow(
+                  color: scheme.primary.withValues(alpha: 0.12),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              elevation: 0,
+              shadowColor: Colors.transparent,
+              child: InkWell(
+                onTap: onTap,
+                customBorder: const CircleBorder(),
+                splashColor: scheme.onPrimary.withValues(alpha: 0.18),
+                highlightColor: scheme.onPrimary.withValues(alpha: 0.08),
+                child: Ink(
+                  width: size,
+                  height: size,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: scheme.surface, width: ring),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color.lerp(scheme.primary, Colors.white, 0.12)!,
+                        scheme.primary,
+                        Color.lerp(scheme.primary, Colors.black, 0.12)!,
+                      ],
+                    ),
                   ),
-                ],
-              ),
-              child: Icon(
-                Icons.mic_rounded,
-                color: scheme.onPrimary,
-                size: iconSize,
+                  child: Icon(
+                    Icons.mic_rounded,
+                    color: scheme.onPrimary,
+                    size: iconSize,
+                  ),
+                ),
               ),
             ),
           ),

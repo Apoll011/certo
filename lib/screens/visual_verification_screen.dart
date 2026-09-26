@@ -76,6 +76,8 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
   bool _flashOn = false;
   bool _isProcessing = false;
   bool _scanning = false;
+  /// Frozen frame shown while the scan line runs over the captured photo.
+  Uint8List? _capturedBytes;
   /// True only while waiting for the initial auto-capture timer.
   bool _awaitingAutoCapture = false;
   bool _medicationCreated = false;
@@ -550,28 +552,33 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
     }
 
     _autoCaptureTimer?.cancel();
+    // Capture first — no scan animation on the live preview.
     setState(() {
       _isProcessing = true;
-      _scanning = true;
+      _scanning = false;
       _awaitingAutoCapture = false;
       _status = VisualVerificationStatus.identifying;
       _cameraError = null;
       _pendingQuestion = null;
+      _capturedBytes = null;
     });
-    _scanCtrl.repeat();
 
     final appState = Provider.of<AppState>(context, listen: false);
 
     try {
       final file = await cam.takePicture();
       final bytes = await File(file.path).readAsBytes();
-      // Scan glow only while capturing — stop once we have the frame.
-      if (mounted) {
-        _stopScanVisual();
-        setState(() => _scanning = false);
-      }
-
       if (!mounted) return;
+
+      // Freeze the frame and scan the whole captured image while AI runs.
+      setState(() {
+        _capturedBytes = bytes;
+        _scanning = true;
+      });
+      _scanCtrl
+        ..reset()
+        ..repeat();
+
       final b64 = base64Encode(bytes);
 
       VisualVerificationCardData? card;
@@ -796,6 +803,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       _status = VisualVerificationStatus.identifying;
       _isProcessing = false;
       _scanning = false;
+      _capturedBytes = null;
       _matchMessage = '';
       _pendingQuestion = null;
       _listeningForAnswer = false;
@@ -821,7 +829,16 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       body: Stack(
         fit: StackFit.expand,
         children: [
-          if (_cameraReady && _camera != null)
+          // Frozen capture (scanned) takes over the live preview once taken.
+          if (_capturedBytes != null)
+            Positioned.fill(
+              child: Image.memory(
+                _capturedBytes!,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              ),
+            )
+          else if (_cameraReady && _camera != null)
             FittedBox(
               fit: BoxFit.cover,
               child: SizedBox(
@@ -851,8 +868,8 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
                   : const CircularProgressIndicator(color: Color(0xFF3366FF)),
             ),
 
-          // Google Lens-style scan glow
-          if (_scanning)
+          // Scan the whole captured image (not the live preview).
+          if (_scanning && _capturedBytes != null)
             AnimatedBuilder(
               animation: _scanCtrl,
               builder: (_, _) => CustomPaint(
@@ -1107,19 +1124,25 @@ class _ResultSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final tone = _sheetTone(status);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
       width: double.infinity,
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.58,
       ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      decoration: BoxDecoration(
+        color: tone.sheetBg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        border: Border(
+          top: BorderSide(color: tone.accent.withValues(alpha: 0.35), width: 3),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Color(0x40000000),
-            blurRadius: 32,
-            offset: Offset(0, -8),
+            color: tone.accent.withValues(alpha: 0.22),
+            blurRadius: 28,
+            offset: const Offset(0, -6),
           ),
         ],
       ),
@@ -1133,7 +1156,7 @@ class _ResultSheet extends StatelessWidget {
               height: 5,
               margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
-                color: const Color(0xFFD1D5DB),
+                color: tone.handle,
                 borderRadius: BorderRadius.circular(3),
               ),
             ),
@@ -1167,10 +1190,11 @@ class _ResultSheet extends StatelessWidget {
                   showNextDose: status == VisualVerificationStatus.confirmedMatch ||
                       (status == VisualVerificationStatus.identified &&
                           nextDoseTime != '—'),
+                  tone: tone,
                 ),
-              VisualVerificationStatus.notInList => _notInList(),
-              VisualVerificationStatus.confirmedMismatch => _mismatch(),
-              VisualVerificationStatus.uncertain => _uncertain(),
+              VisualVerificationStatus.notInList => _notInList(tone: tone),
+              VisualVerificationStatus.confirmedMismatch => _mismatch(tone: tone),
+              VisualVerificationStatus.uncertain => _uncertain(tone: tone),
             },
             if (uiAttachments.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -1180,10 +1204,10 @@ class _ResultSheet extends StatelessWidget {
                     uiAttachments[i].caption!.trim().isNotEmpty) ...[
                   Text(
                     uiAttachments[i].caption!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF334155),
+                      color: tone.bodyText,
                     ),
                   ),
                   const SizedBox(height: 6),
@@ -1206,6 +1230,53 @@ class _ResultSheet extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  static _SheetTone _sheetTone(VisualVerificationStatus status) {
+    return switch (status) {
+      VisualVerificationStatus.confirmedMatch ||
+      VisualVerificationStatus.identified =>
+        const _SheetTone(
+          sheetBg: Color(0xFFE8F8EF),
+          accent: Color(0xFF15803D),
+          handle: Color(0xFF86EFAC),
+          title: Color(0xFF14532D),
+          bodyText: Color(0xFF166534),
+          muted: Color(0xFF3F7A55),
+        ),
+      VisualVerificationStatus.confirmedMismatch => const _SheetTone(
+          sheetBg: Color(0xFFFEECEC),
+          accent: Color(0xFFDC2626),
+          handle: Color(0xFFFCA5A5),
+          title: Color(0xFF7F1D1D),
+          bodyText: Color(0xFF991B1B),
+          muted: Color(0xFFB91C1C),
+        ),
+      VisualVerificationStatus.uncertain => const _SheetTone(
+          sheetBg: Color(0xFFF5F0FF),
+          accent: Color(0xFF7C3AED),
+          handle: Color(0xFFD8B4FE),
+          title: Color(0xFF4C1D95),
+          bodyText: Color(0xFF5B21B6),
+          muted: Color(0xFF6D28D9),
+        ),
+      VisualVerificationStatus.notInList => const _SheetTone(
+          sheetBg: Color(0xFFEEF4FF),
+          accent: Color(0xFF3366FF),
+          handle: Color(0xFFBFDBFE),
+          title: Color(0xFF1E3A8A),
+          bodyText: Color(0xFF1E40AF),
+          muted: Color(0xFF3B82F6),
+        ),
+      VisualVerificationStatus.identifying => const _SheetTone(
+          sheetBg: Colors.white,
+          accent: Color(0xFF3366FF),
+          handle: Color(0xFFD1D5DB),
+          title: Color(0xFF0F172A),
+          bodyText: Color(0xFF334155),
+          muted: Color(0xFF64748B),
+        ),
+    };
   }
 
   Widget _identifying() {
@@ -1285,6 +1356,7 @@ class _ResultSheet extends StatelessWidget {
     required String badge,
     required String primaryLabel,
     required bool showNextDose,
+    required _SheetTone tone,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1295,15 +1367,15 @@ class _ResultSheet extends StatelessWidget {
             Expanded(
               child: Text(
                 identifiedName,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
-                  color: Color(0xFF0F172A),
+                  color: tone.title,
                   height: 1.15,
                 ),
               ),
             ),
-            _Badge(label: badge, color: const Color(0xFF15803D)),
+            _Badge(label: badge, color: tone.accent),
           ],
         ),
         const SizedBox(height: 4),
@@ -1312,16 +1384,16 @@ class _ResultSheet extends StatelessWidget {
             if (dosage.isNotEmpty) dosage,
             if (category.isNotEmpty) category,
           ].join(' · '),
-          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+          style: TextStyle(fontSize: 14, color: tone.muted),
         ),
         const SizedBox(height: 12),
         _InfoBanner(
-          color: const Color(0xFFEAF8F1),
-          border: const Color(0xFFBBF7D0),
+          color: Colors.white.withValues(alpha: 0.65),
+          border: tone.accent.withValues(alpha: 0.25),
           icon: Icons.check_circle_rounded,
-          iconColor: const Color(0xFF15803D),
+          iconColor: tone.accent,
           text: matchMessage,
-          textColor: const Color(0xFF166534),
+          textColor: tone.bodyText,
         ),
         if (showNextDose) ...[
           const SizedBox(height: 12),
@@ -1344,18 +1416,18 @@ class _ResultSheet extends StatelessWidget {
     );
   }
 
-  Widget _notInList() {
+  Widget _notInList({required _SheetTone tone}) {
     return Column(
       children: [
-        const Icon(Icons.medication_outlined, size: 40, color: Color(0xFF3366FF)),
+        Icon(Icons.medication_outlined, size: 40, color: tone.accent),
         const SizedBox(height: 10),
         Text(
           identifiedName,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
+            color: tone.title,
           ),
         ),
         const SizedBox(height: 6),
@@ -1364,16 +1436,16 @@ class _ResultSheet extends StatelessWidget {
               ? matchMessage
               : 'This isn\'t in your medication list yet.',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+          style: TextStyle(fontSize: 14, color: tone.muted),
         ),
         if (dosage.isNotEmpty || category.isNotEmpty) ...[
           const SizedBox(height: 10),
           Text(
             [dosage, category].where((s) => s.isNotEmpty).join(' · '),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF334155),
+              color: tone.bodyText,
             ),
           ),
         ],
@@ -1384,42 +1456,42 @@ class _ResultSheet extends StatelessWidget {
     );
   }
 
-  Widget _mismatch() {
+  Widget _mismatch({required _SheetTone tone}) {
     return Column(
       children: [
         Container(
           width: 56,
           height: 56,
           decoration: BoxDecoration(
-            color: const Color(0xFFF04438),
+            color: tone.accent,
             borderRadius: BorderRadius.circular(16),
           ),
           child: const Icon(Icons.warning_rounded, color: Colors.white, size: 30),
         ),
         const SizedBox(height: 14),
-        const Text(
+        Text(
           'Not your medication',
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
+            color: tone.title,
           ),
         ),
         const SizedBox(height: 8),
         Text(
           matchMessage,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+          style: TextStyle(fontSize: 14, color: tone.muted),
         ),
         const SizedBox(height: 14),
         _InfoBanner(
-          color: const Color(0xFFFEF2F2),
-          border: const Color(0xFFFECACA),
+          color: Colors.white.withValues(alpha: 0.7),
+          border: tone.accent.withValues(alpha: 0.3),
           icon: Icons.medication_rounded,
-          iconColor: const Color(0xFFB91C1C),
+          iconColor: tone.accent,
           text: 'You need: $expectedName'
               '${nextDoseInstruction.isNotEmpty ? ' · $nextDoseInstruction' : ''}',
-          textColor: const Color(0xFF7F1D1D),
+          textColor: tone.bodyText,
         ),
         const SizedBox(height: 16),
         _PrimaryBtn(label: 'Try again', onTap: onTryAgain),
@@ -1432,33 +1504,33 @@ class _ResultSheet extends StatelessWidget {
     );
   }
 
-  Widget _uncertain() {
+  Widget _uncertain({required _SheetTone tone}) {
     return Column(
       children: [
         Container(
           width: 56,
           height: 56,
           decoration: BoxDecoration(
-            color: const Color(0xFF8B6BF6),
+            color: tone.accent,
             borderRadius: BorderRadius.circular(16),
           ),
           child:
               const Icon(Icons.help_outline_rounded, color: Colors.white, size: 30),
         ),
         const SizedBox(height: 14),
-        const Text(
+        Text(
           'I\'m not sure',
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
+            color: tone.title,
           ),
         ),
         const SizedBox(height: 8),
         Text(
           matchMessage,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+          style: TextStyle(fontSize: 14, color: tone.muted),
         ),
         const SizedBox(height: 18),
         _PrimaryBtn(label: 'Try again', onTap: onTryAgain),
@@ -1470,6 +1542,24 @@ class _ResultSheet extends StatelessWidget {
       ],
     );
   }
+}
+
+class _SheetTone {
+  const _SheetTone({
+    required this.sheetBg,
+    required this.accent,
+    required this.handle,
+    required this.title,
+    required this.bodyText,
+    required this.muted,
+  });
+
+  final Color sheetBg;
+  final Color accent;
+  final Color handle;
+  final Color title;
+  final Color bodyText;
+  final Color muted;
 }
 
 class _AskBanner extends StatelessWidget {
