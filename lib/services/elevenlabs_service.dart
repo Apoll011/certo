@@ -81,16 +81,23 @@ class ElevenLabsService {
   WebSocketChannel? _wsChannel;
   StreamSubscription? _wsSub;
   final AudioRecorder _recorder = AudioRecorder();
+  /// Separate mic session so barge-in can run while TTS plays without
+  /// fighting the STT recorder lifecycle.
+  final AudioRecorder _bargeRecorder = AudioRecorder();
   StreamSubscription<Uint8List>? _audioSub;
 
   bool _listening = false;
+  bool get isListening => _listening;
   bool _ttsCancelled = false;
 
   /// Mic RMS monitor used while TTS plays so the user can interrupt.
   bool _bargeInActive = false;
+  bool get isBargeInActive => _bargeInActive;
   StreamSubscription<Uint8List>? _bargeInSub;
   int _bargeInHotChunks = 0;
-  DateTime? _bargeInArmedAt;
+  double _bargeBaselineRms = 0;
+  int _bargeBaselineSamples = 0;
+  bool _bargeBaselineReady = false;
 
   // ── STT ────────────────────────────────────────────────────────────────────
 
@@ -178,6 +185,8 @@ class ElevenLabsService {
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
+          // Keep mic alive if the TTS player briefly steals audio focus.
+          audioInterruption: AudioInterruptionMode.none,
         ),
       );
 
@@ -292,51 +301,91 @@ class ElevenLabsService {
 
   // ── Barge-in (speech while TTS plays) ─────────────────────────────────────
 
-  /// Opens the mic and watches PCM energy. Emits [BargeInDetected] once when
-  /// the user speaks over the AI (after a short arming delay to avoid echo).
+  /// Opens a dedicated mic and watches PCM energy with an adaptive baseline
+  /// (speaker echo) so near-field user speech can interrupt TTS.
   Future<void> startBargeInMonitor({
-    double rmsThreshold = 0.06,
-    int consecutiveChunks = 4,
-    Duration armDelay = const Duration(milliseconds: 400),
+    Duration armDelay = const Duration(milliseconds: 350),
+    Duration calibrateFor = const Duration(milliseconds: 450),
+    int consecutiveChunks = 2,
+    double minAbsoluteRms = 0.022,
+    double overBaselineFactor = 2.2,
+    double overBaselineAdd = 0.018,
   }) async {
     await stopBargeInMonitor();
-    if (_listening) return;
+    // Prefer not to fight an active STT session on some devices; caller should
+    // stop listening first. If STT is up, skip RMS and let STT barge-in handle it.
+    if (_listening) {
+      debugPrint('ElevenLabs: barge-in RMS skipped (STT already listening)');
+      return;
+    }
 
     try {
-      final hasPerm = await _recorder.hasPermission();
-      if (!hasPerm) return;
-    } catch (_) {
+      final hasPerm = await _bargeRecorder.hasPermission();
+      if (!hasPerm) {
+        debugPrint('ElevenLabs: barge-in mic permission denied');
+        return;
+      }
+    } catch (e) {
+      debugPrint('ElevenLabs: barge-in permission check failed: $e');
       return;
     }
 
     _bargeInHotChunks = 0;
-    _bargeInArmedAt = DateTime.now().add(armDelay);
+    _bargeBaselineRms = 0;
+    _bargeBaselineSamples = 0;
+    _bargeBaselineReady = false;
+    final armedAt = DateTime.now().add(armDelay);
+    final calibrateUntil = armedAt.add(calibrateFor);
     _bargeInActive = true;
 
     try {
-      final stream = await _recorder.startStream(
+      final stream = await _bargeRecorder.startStream(
         const RecordConfig(
           encoder: AudioEncoder.pcm16bits,
           sampleRate: 16000,
           numChannels: 1,
+          // Prefer unprocessed mic so AEC doesn't erase near-field speech.
+          autoGain: true,
+          echoCancel: false,
+          noiseSuppress: false,
+          // Critical: default is pause — TTS playback would freeze the mic.
+          audioInterruption: AudioInterruptionMode.none,
         ),
       );
 
       _bargeInSub = stream.listen((chunk) {
         if (!_bargeInActive) return;
-        final armedAt = _bargeInArmedAt;
-        if (armedAt != null && DateTime.now().isBefore(armedAt)) {
+        final now = DateTime.now();
+        if (now.isBefore(armedAt)) return;
+
+        final rms = _pcm16Rms(chunk);
+        if (!_bargeBaselineReady) {
+          _bargeBaselineRms += rms;
+          _bargeBaselineSamples += 1;
+          if (now.isAfter(calibrateUntil) && _bargeBaselineSamples > 0) {
+            _bargeBaselineRms /= _bargeBaselineSamples;
+            _bargeBaselineReady = true;
+            debugPrint(
+              'ElevenLabs: barge-in baseline rms=${_bargeBaselineRms.toStringAsFixed(4)}',
+            );
+          }
           return;
         }
 
-        final rms = _pcm16Rms(chunk);
-        if (rms >= rmsThreshold) {
+        final threshold = math.max(
+          minAbsoluteRms,
+          _bargeBaselineRms * overBaselineFactor + overBaselineAdd,
+        );
+
+        if (rms >= threshold) {
           _bargeInHotChunks += 1;
           if (_bargeInHotChunks >= consecutiveChunks) {
             _bargeInActive = false;
-            debugPrint('ElevenLabs: barge-in detected (rms=$rms)');
+            debugPrint(
+              'ElevenLabs: barge-in detected (rms=${rms.toStringAsFixed(4)} '
+              'thr=${threshold.toStringAsFixed(4)} base=${_bargeBaselineRms.toStringAsFixed(4)})',
+            );
             _emit(BargeInDetected());
-            // Stop mic async; don't block the stream callback.
             unawaited(stopBargeInMonitor());
           }
         } else {
@@ -354,26 +403,21 @@ class ElevenLabsService {
   Future<void> stopBargeInMonitor() async {
     _bargeInActive = false;
     _bargeInHotChunks = 0;
-    _bargeInArmedAt = null;
+    _bargeBaselineReady = false;
     await _bargeInSub?.cancel();
     _bargeInSub = null;
-    // Only stop the recorder if we aren't in a normal STT listen session.
-    if (!_listening) {
-      try {
-        await _recorder.stop();
-      } catch (_) {}
-    }
+    try {
+      await _bargeRecorder.stop();
+    } catch (_) {}
   }
 
   static double _pcm16Rms(Uint8List chunk) {
     final sampleCount = chunk.length ~/ 2;
     if (sampleCount == 0) return 0;
     var sumSq = 0.0;
+    final bd = ByteData.sublistView(chunk);
     for (var i = 0; i < sampleCount; i++) {
-      final lo = chunk[i * 2];
-      final hi = chunk[i * 2 + 1];
-      var sample = lo | (hi << 8);
-      if (sample >= 0x8000) sample -= 0x10000;
+      final sample = bd.getInt16(i * 2, Endian.little);
       sumSq += sample * sample;
     }
     return math.sqrt(sumSq / sampleCount) / 32768.0;
@@ -495,5 +539,6 @@ class ElevenLabsService {
     await stopListening();
     await _eventController.close();
     _recorder.dispose();
+    _bargeRecorder.dispose();
   }
 }

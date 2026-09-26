@@ -104,6 +104,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   bool _userInterrupted = false;
   /// Ignore further TTS chunks after barge-in / cancel.
   bool _ignoreTts = false;
+  /// STT was started only to detect barge-in over TTS.
+  bool _bargeInViaStt = false;
+  DateTime? _bargeSttArmUntil;
   /// Utterance captured while the interrupted AI turn was still winding down.
   String? _pendingAfterInterrupt;
 
@@ -198,6 +201,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (_collectingAskAnswer && event is! BargeInDetected) return;
     switch (event) {
       case TranscriptionPartial(:final text):
+        if (_phase == _VoicePhase.speaking && _bargeInViaStt) {
+          _maybeBargeInFromTranscript(text);
+          return;
+        }
         if (_phase != _VoicePhase.listening) return;
         // User is mid-utterance — cancel any pending end-of-turn.
         _endOfTurnTimer?.cancel();
@@ -207,6 +214,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         });
 
       case TranscriptionFinal(:final text):
+        if (_phase == _VoicePhase.speaking && _bargeInViaStt) {
+          _maybeBargeInFromTranscript(text);
+          return;
+        }
         // VAD detected the user stopped speaking for this segment.
         if (_phase != _VoicePhase.listening) return;
         if (text.trim().isEmpty) return;
@@ -254,6 +265,35 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
   }
 
+  void _maybeBargeInFromTranscript(String text) {
+    if (_userInterrupted) return;
+    if (_bargeSttArmUntil != null &&
+        DateTime.now().isBefore(_bargeSttArmUntil!)) {
+      return;
+    }
+    if (text.trim().length < 2) return;
+    debugPrint('VoiceMode: barge-in via STT transcript "$text"');
+    unawaited(_handleBargeIn());
+  }
+
+  /// Arm mic energy monitor (preferred) and STT fallback for barge-in.
+  Future<void> _armBargeInDetection() async {
+    if (_userInterrupted || _ignoreTts) return;
+    await _svc.startBargeInMonitor();
+    if (_svc.isBargeInActive) return;
+
+    // RMS monitor failed (device mic contention, etc.) — use STT instead.
+    debugPrint('VoiceMode: barge-in falling back to STT');
+    _bargeSttArmUntil = DateTime.now().add(const Duration(milliseconds: 600));
+    _bargeInViaStt = true;
+    try {
+      await _svc.startListening();
+    } catch (e) {
+      debugPrint('VoiceMode: barge-in STT fallback failed: $e');
+      _bargeInViaStt = false;
+    }
+  }
+
   /// User spoke while the AI was talking — stop TTS and listen again.
   Future<void> _handleBargeIn() async {
     if (!mounted) return;
@@ -263,17 +303,43 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     debugPrint('VoiceMode: barge-in — stopping TTS, listening again');
     _userInterrupted = true;
     _ignoreTts = true;
+    final wasSttBarge = _bargeInViaStt;
+    _bargeInViaStt = false;
     _svc.cancelSpeak();
     await _svc.stopBargeInMonitor();
     _audioBuffer.clear();
     try {
       await _player.stop();
     } catch (_) {}
+    try {
+      await _player.setVolume(1.0);
+    } catch (_) {}
     if (_speakDone != null && !_speakDone!.isCompleted) {
       _speakDone!.complete();
     }
 
     if (!mounted || _shouldClose || _openedVisual) return;
+
+    if (_collectingAskAnswer) {
+      if (mounted) setState(() => _phase = _VoicePhase.listening);
+      if (!_svc.isListening) await _svc.startListening();
+      return;
+    }
+
+    // STT barge already has the mic open — reuse it as the real listen session.
+    if (wasSttBarge && _svc.isListening) {
+      _endOfTurnTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _phase = _VoicePhase.listening;
+          _finalText = '';
+          _partialText = '';
+          _errorText = null;
+        });
+      }
+      return;
+    }
+
     await _startListening();
   }
 
@@ -593,7 +659,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _ignoreTts = false;
     _audioBuffer.clear();
     _speakDone = Completer<void>();
-    await _svc.startBargeInMonitor();
+    // Barge-in monitor starts when playback begins (_playBufferedAudio),
+    // not during download — that's when the user can actually interrupt.
     try {
       await _svc.speak(trimmed);
       if (_userInterrupted) return;
@@ -606,6 +673,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       debugPrint('VoiceMode: speak failed: $e');
     } finally {
       await _svc.stopBargeInMonitor();
+      if (_bargeInViaStt && !_userInterrupted) {
+        _bargeInViaStt = false;
+        await _svc.stopListening();
+      }
+      try {
+        await _player.setVolume(1.0);
+      } catch (_) {}
       if (_speakDone != null && !_speakDone!.isCompleted) {
         _speakDone!.complete();
       }
@@ -635,6 +709,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _audioBuffer.clear();
 
     try {
+      // Slightly duck TTS so near-field speech is easier to detect.
+      await _player.setVolume(0.82);
       if (kIsWeb) {
         await _player.play(BytesSource(bytes));
       } else {
@@ -647,6 +723,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         } catch (_) {
           await _player.play(BytesSource(bytes));
         }
+      }
+      // Start barge-in AFTER playback begins (mic must survive audio focus).
+      if (!_userInterrupted && !_ignoreTts) {
+        unawaited(_armBargeInDetection());
       }
     } catch (e) {
       debugPrint('VoiceMode: Audio playback error: $e');
