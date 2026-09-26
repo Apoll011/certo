@@ -451,19 +451,29 @@ class ElevenLabsService {
 
   /// Converts [text] to speech using ElevenLabs TTS and emits
   /// [TtsAudioChunk] events with streaming MP3 bytes, followed by [TtsDone].
+  ///
+  /// Always ends with exactly one [TtsDone] so callers never hang waiting
+  /// for playback that will never start.
   Future<void> speak(String text) async {
     final apiKey = AppConfig.elevenLabsApiKey;
     if (apiKey.isEmpty) {
       _emit(VoiceError('ElevenLabs API key is missing. Set ELEVENLABS_API_KEY with --dart-define.'));
+      _emit(TtsDone());
       return;
     }
 
     _ttsCancelled = false;
+    var emittedDone = false;
+
+    void finishStream() {
+      if (emittedDone) return;
+      emittedDone = true;
+      _emit(TtsDone());
+    }
 
     final voiceId = AppConfig.elevenLabsVoiceId;
     final primaryModel = AppConfig.elevenLabsTtsModel;
 
-    // Prioritize configured model, then fallback to other reliable models
     final modelsToTry = <String>[
       primaryModel,
       if (primaryModel != 'eleven_flash_v2_5') 'eleven_flash_v2_5',
@@ -473,35 +483,60 @@ class ElevenLabsService {
 
     String? lastError;
 
-    for (final modelId in modelsToTry) {
-      if (_ttsCancelled) return;
-      debugPrint('ElevenLabs TTS: trying model $modelId with voice $voiceId...');
-      final (success, errorMsg) = await _fetchTtsStream(
-        voiceId: voiceId,
-        apiKey: apiKey,
-        text: text,
-        modelId: modelId,
-      );
+    try {
+      for (final modelId in modelsToTry) {
+        if (_ttsCancelled) {
+          debugPrint('ElevenLabs TTS: cancelled before/during model attempts');
+          return;
+        }
+        debugPrint('ElevenLabs TTS: trying model $modelId with voice $voiceId...');
+        final (success, errorMsg, bytes) = await _fetchTtsStream(
+          voiceId: voiceId,
+          apiKey: apiKey,
+          text: text,
+          modelId: modelId,
+        );
 
-      if (success) {
-        return;
+        if (_ttsCancelled) {
+          // Drop whatever we got — UI is ignoring TTS after barge-in.
+          return;
+        }
+
+        if (success && bytes > 0) {
+          // Emit a single Done after the full byte stream (chunks already sent).
+          finishStream();
+          debugPrint(
+            'ElevenLabs TTS: finished with $modelId ($bytes bytes)',
+          );
+          return;
+        }
+        lastError = errorMsg ?? 'TTS returned empty audio';
+        debugPrint(
+          'ElevenLabs TTS: model $modelId failed ($lastError), trying fallback...',
+        );
       }
-      lastError = errorMsg;
-      debugPrint('ElevenLabs TTS: model $modelId failed ($lastError), trying fallback...');
-    }
 
-    if (!_ttsCancelled) {
-      _emit(VoiceError(lastError ?? 'TTS synthesis failed. Check your API key and voice ID.'));
+      if (!_ttsCancelled) {
+        _emit(VoiceError(
+          lastError ?? 'TTS synthesis failed. Check your API key and voice ID.',
+        ));
+      }
+    } finally {
+      finishStream();
     }
   }
 
-  Future<(bool, String?)> _fetchTtsStream({
+  /// Returns `(success, errorMessage, totalBytes)`. Does **not** emit [TtsDone]
+  /// — [speak] owns that so we never double-fire it.
+  Future<(bool, String?, int)> _fetchTtsStream({
     required String voiceId,
     required String apiKey,
     required String text,
     required String modelId,
   }) async {
-    final url = Uri.parse('$_ttsEndpoint/$voiceId/stream?output_format=mp3_44100_128');
+    final url = Uri.parse(
+      '$_ttsEndpoint/$voiceId/stream?output_format=mp3_44100_128',
+    );
 
     final body = jsonEncode({
       'text': text,
@@ -519,30 +554,42 @@ class ElevenLabsService {
         ..headers['Accept'] = 'audio/mpeg'
         ..body = body;
 
-      final response = await request.send();
+      final response = await request.send().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () => throw TimeoutException('TTS request timed out'),
+      );
 
       if (response.statusCode != 200) {
         final bodyStr = await response.stream.bytesToString();
-        debugPrint('ElevenLabs TTS error ${response.statusCode} ($modelId): $bodyStr');
-        return (false, 'TTS error (${response.statusCode}): $bodyStr');
+        debugPrint(
+          'ElevenLabs TTS error ${response.statusCode} ($modelId): $bodyStr',
+        );
+        return (false, 'TTS error (${response.statusCode}): $bodyStr', 0);
       }
 
-      await for (final chunk in response.stream) {
+      var totalBytes = 0;
+      await for (final chunk in response.stream.timeout(
+        const Duration(seconds: 45),
+      )) {
         if (_ttsCancelled) {
-          debugPrint('ElevenLabs TTS: cancelled mid-stream');
-          return (true, null);
+          debugPrint(
+            'ElevenLabs TTS: cancelled mid-stream after $totalBytes bytes',
+          );
+          return (true, null, totalBytes);
         }
+        totalBytes += chunk.length;
         _emit(TtsAudioChunk(Uint8List.fromList(chunk)));
       }
 
-      if (!_ttsCancelled) {
-        _emit(TtsDone());
-        debugPrint('ElevenLabs TTS: streaming finished successfully with $modelId');
+      if (totalBytes == 0) {
+        debugPrint('ElevenLabs TTS: empty audio body from $modelId');
+        return (false, 'TTS returned empty audio', 0);
       }
-      return (true, null);
+
+      return (true, null, totalBytes);
     } catch (e) {
       debugPrint('ElevenLabs TTS exception ($modelId): $e');
-      return (false, 'TTS connection error: $e');
+      return (false, 'TTS connection error: $e', 0);
     }
   }
 

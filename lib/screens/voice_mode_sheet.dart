@@ -145,6 +145,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   /// Utterance captured while the interrupted AI turn was still winding down.
   String? _pendingAfterInterrupt;
 
+  /// Monotonic id so stale TtsDone / complete events can't finish a newer speak.
+  int _ttsSession = 0;
+  int _playingSession = 0;
+  bool _playInFlight = false;
+  Timer? _bargeInArmTimer;
+  Timer? _playbackWatchdog;
+
   /// Smoothed mic amplitude 0–1 for the audio-reactive orb.
   double _amplitude = 0;
 
@@ -201,6 +208,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   @override
   void dispose() {
     _endOfTurnTimer?.cancel();
+    _bargeInArmTimer?.cancel();
+    _playbackWatchdog?.cancel();
     _layoutCtrl.dispose();
     _chatScroll.dispose();
     _eventSub?.cancel();
@@ -305,12 +314,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
       case TtsDone():
         if (_ignoreTts) {
-          if (_speakDone != null && !_speakDone!.isCompleted) {
-            _speakDone!.complete();
-          }
+          _completeSpeakDone();
           return;
         }
-        _playBufferedAudio();
+        unawaited(_playBufferedAudio());
 
       case BargeInDetected():
         unawaited(_handleBargeIn());
@@ -323,9 +330,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             _errorText = message;
           });
         }
-        if (_speakDone != null && !_speakDone!.isCompleted) {
-          _speakDone!.complete();
-        }
+        _completeSpeakDone();
 
       case VoiceAmplitude():
         break;
@@ -345,11 +350,19 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   Future<void> _armBargeInDetection() async {
     if (_userInterrupted || _ignoreTts) return;
-    await _svc.startBargeInMonitor();
+    // Stricter thresholds — false barge-in was cutting TTS with no audible output.
+    await _svc.startBargeInMonitor(
+      armDelay: const Duration(milliseconds: 500),
+      calibrateFor: const Duration(milliseconds: 600),
+      consecutiveChunks: 3,
+      minAbsoluteRms: 0.035,
+      overBaselineFactor: 2.8,
+      overBaselineAdd: 0.025,
+    );
     if (_svc.isBargeInActive) return;
 
     debugPrint('VoiceMode: barge-in falling back to STT');
-    _bargeSttArmUntil = DateTime.now().add(const Duration(milliseconds: 600));
+    _bargeSttArmUntil = DateTime.now().add(const Duration(milliseconds: 800));
     _bargeInViaStt = true;
     try {
       await _svc.startListening();
@@ -367,6 +380,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     debugPrint('VoiceMode: barge-in — stopping TTS, listening again');
     _userInterrupted = true;
     _ignoreTts = true;
+    _ttsSession++; // invalidate in-flight play / Done handlers
+    _bargeInArmTimer?.cancel();
+    _playbackWatchdog?.cancel();
     final wasSttBarge = _bargeInViaStt;
     _bargeInViaStt = false;
     _svc.cancelSpeak();
@@ -378,9 +394,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     try {
       await _player.setVolume(1.0);
     } catch (_) {}
-    if (_speakDone != null && !_speakDone!.isCompleted) {
-      _speakDone!.complete();
-    }
+    _completeSpeakDone();
 
     if (!mounted || _shouldClose || _openedVisual) return;
 
@@ -406,10 +420,18 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     await _startListening();
   }
 
-  void _onPlaybackComplete() {
+  void _completeSpeakDone() {
+    _playInFlight = false;
+    _playbackWatchdog?.cancel();
     if (_speakDone != null && !_speakDone!.isCompleted) {
       _speakDone!.complete();
     }
+  }
+
+  void _onPlaybackComplete() {
+    // Ignore completion from a previous play session.
+    if (_playingSession != _ttsSession) return;
+    _completeSpeakDone();
     if (mounted && _phase == _VoicePhase.speaking && !_turnInFlight) {
       setState(() => _phase = _VoicePhase.idle);
       _syncLayoutAnim();
@@ -725,49 +747,92 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _syncLayoutAnim();
     _scrollChatToEnd();
 
+    final session = ++_ttsSession;
     _ignoreTts = false;
     _audioBuffer.clear();
+    _bargeInArmTimer?.cancel();
+    _playbackWatchdog?.cancel();
     _speakDone = Completer<void>();
+
     try {
+      try {
+        await _player.stop();
+      } catch (_) {}
+
       await _svc.speak(trimmed);
-      if (_userInterrupted) return;
+      if (_userInterrupted || session != _ttsSession) return;
+
+      // If Done raced / was missed, still play whatever we buffered.
+      if (!_playInFlight &&
+          _audioBuffer.isNotEmpty &&
+          _speakDone != null &&
+          !_speakDone!.isCompleted) {
+        debugPrint('VoiceMode: speak() returned with buffered audio — playing');
+        unawaited(_playBufferedAudio(session: session));
+      }
+
+      // Empty TTS — leave "Speaking" immediately instead of hanging.
+      if (_speakDone != null &&
+          !_speakDone!.isCompleted &&
+          !_playInFlight &&
+          _audioBuffer.isEmpty) {
+        debugPrint('VoiceMode: TTS finished with no audio bytes');
+        _completeSpeakDone();
+        return;
+      }
+
       await _speakDone!.future.timeout(
         const Duration(seconds: 45),
-        onTimeout: () {},
+        onTimeout: () {
+          debugPrint('VoiceMode: speakDone timed out (session $session)');
+        },
       );
     } catch (e) {
       debugPrint('VoiceMode: speak failed: $e');
     } finally {
-      await _svc.stopBargeInMonitor();
-      if (_bargeInViaStt && !_userInterrupted) {
-        _bargeInViaStt = false;
-        await _svc.stopListening();
+      if (session == _ttsSession) {
+        _bargeInArmTimer?.cancel();
+        _playbackWatchdog?.cancel();
+        await _svc.stopBargeInMonitor();
+        if (_bargeInViaStt && !_userInterrupted) {
+          _bargeInViaStt = false;
+          await _svc.stopListening();
+        }
+        try {
+          await _player.setVolume(1.0);
+        } catch (_) {}
+        _completeSpeakDone();
+        _speakDone = null;
       }
-      try {
-        await _player.setVolume(1.0);
-      } catch (_) {}
-      if (_speakDone != null && !_speakDone!.isCompleted) {
-        _speakDone!.complete();
-      }
-      _speakDone = null;
     }
   }
 
-  Future<void> _playBufferedAudio() async {
-    if (_ignoreTts || _userInterrupted) {
+  Future<void> _playBufferedAudio({int? session}) async {
+    final activeSession = session ?? _ttsSession;
+    if (_ignoreTts || _userInterrupted || activeSession != _ttsSession) {
       _audioBuffer.clear();
-      if (_speakDone != null && !_speakDone!.isCompleted) {
-        _speakDone!.complete();
-      }
+      _completeSpeakDone();
       return;
     }
+    if (_playInFlight) return;
     if (_audioBuffer.isEmpty) {
-      if (_speakDone != null && !_speakDone!.isCompleted) {
-        _speakDone!.complete();
-      }
+      debugPrint('VoiceMode: TtsDone with empty buffer — skipping playback');
+      _completeSpeakDone();
       return;
     }
 
+    // Anything under ~256B is almost certainly not playable MP3.
+    if (_audioBuffer.length < 256) {
+      debugPrint(
+        'VoiceMode: TTS buffer too small (${_audioBuffer.length}b) — skipping',
+      );
+      _audioBuffer.clear();
+      _completeSpeakDone();
+      return;
+    }
+
+    _playInFlight = true;
+    _playingSession = activeSession;
     if (mounted) {
       setState(() => _phase = _VoicePhase.speaking);
       _syncLayoutAnim();
@@ -775,8 +840,28 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final bytes = Uint8List.fromList(_audioBuffer);
     _audioBuffer.clear();
 
+    // ~128kbps MP3 → bytes/16 ≈ ms. Watchdog if onPlayerComplete never fires.
+    final estimatedMs = (bytes.length / 16).round().clamp(800, 60000);
+    _playbackWatchdog?.cancel();
+    _playbackWatchdog = Timer(
+      Duration(milliseconds: estimatedMs + 2500),
+      () {
+        if (_playingSession != activeSession) return;
+        if (_speakDone != null && !_speakDone!.isCompleted) {
+          debugPrint(
+            'VoiceMode: playback watchdog fired after ${estimatedMs}ms audio',
+          );
+          _completeSpeakDone();
+        }
+      },
+    );
+
     try {
-      await _player.setVolume(0.82);
+      // Full volume first — ducking + opening a 2nd mic often mutes the speaker.
+      await _player.stop();
+      await _player.setReleaseMode(ReleaseMode.stop);
+      await _player.setVolume(1.0);
+
       if (kIsWeb) {
         await _player.play(BytesSource(bytes));
       } else {
@@ -786,18 +871,34 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           );
           await tempFile.writeAsBytes(bytes, flush: true);
           await _player.play(DeviceFileSource(tempFile.path));
-        } catch (_) {
+        } catch (e) {
+          debugPrint('VoiceMode: file playback failed ($e), trying bytes');
           await _player.play(BytesSource(bytes));
         }
       }
-      if (!_userInterrupted && !_ignoreTts) {
-        unawaited(_armBargeInDetection());
+
+      if (_userInterrupted || _ignoreTts || activeSession != _ttsSession) {
+        try {
+          await _player.stop();
+        } catch (_) {}
+        _completeSpeakDone();
+        return;
       }
+
+      // Delay barge-in mic so TTS can actually be heard. Opening the mic
+      // immediately steals audio focus on many Android devices.
+      _bargeInArmTimer?.cancel();
+      _bargeInArmTimer = Timer(const Duration(milliseconds: 1100), () {
+        if (_userInterrupted ||
+            _ignoreTts ||
+            activeSession != _ttsSession) {
+          return;
+        }
+        unawaited(_armBargeInDetection());
+      });
     } catch (e) {
       debugPrint('VoiceMode: Audio playback error: $e');
-      if (_speakDone != null && !_speakDone!.isCompleted) {
-        _speakDone!.complete();
-      }
+      _completeSpeakDone();
       if (mounted) {
         setState(() {
           _errorText = 'Playback error: $e';
@@ -806,6 +907,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _syncLayoutAnim();
       }
     }
+    // Keep _playInFlight true until playback completes / is cancelled so a
+    // duplicate TtsDone cannot start a second overlapping play.
   }
 
   void _scrollChatToEnd() {
