@@ -100,6 +100,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   bool _openedVisual = false;
   bool _collectingAskAnswer = false;
 
+  /// User spoke over TTS — skip remaining speaks and resume listen.
+  bool _userInterrupted = false;
+  /// Ignore further TTS chunks after barge-in / cancel.
+  bool _ignoreTts = false;
+  /// Utterance captured while the interrupted AI turn was still winding down.
+  String? _pendingAfterInterrupt;
+
   late final AnimationController _orbCtrl;
   late final Animation<double> _orbScale;
   late final Animation<double> _orbFloat;
@@ -173,6 +180,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     _chatScroll.dispose();
     _eventSub?.cancel();
     _playerCompleteSub?.cancel();
+    unawaited(_svc.stopBargeInMonitor());
     _svc.dispose();
     _player.dispose();
     if (_speakDone != null && !_speakDone!.isCompleted) {
@@ -187,7 +195,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   void _onEvent(VoiceEvent event) {
     if (!mounted) return;
     // While ask_user is collecting a spoken reply, ignore for the main loop.
-    if (_collectingAskAnswer) return;
+    if (_collectingAskAnswer && event is! BargeInDetected) return;
     switch (event) {
       case TranscriptionPartial(:final text):
         if (_phase != _VoicePhase.listening) return;
@@ -217,10 +225,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         });
 
       case TtsAudioChunk(:final bytes):
+        if (_ignoreTts) return;
         _audioBuffer.addAll(bytes);
 
       case TtsDone():
+        if (_ignoreTts) {
+          if (_speakDone != null && !_speakDone!.isCompleted) {
+            _speakDone!.complete();
+          }
+          return;
+        }
         _playBufferedAudio();
+
+      case BargeInDetected():
+        unawaited(_handleBargeIn());
 
       case VoiceError(:final message):
         debugPrint('VoiceMode UI error: $message');
@@ -236,6 +254,29 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
   }
 
+  /// User spoke while the AI was talking — stop TTS and listen again.
+  Future<void> _handleBargeIn() async {
+    if (!mounted) return;
+    if (_phase != _VoicePhase.speaking && !_collectingAskAnswer) return;
+    if (_userInterrupted && _phase == _VoicePhase.listening) return;
+
+    debugPrint('VoiceMode: barge-in — stopping TTS, listening again');
+    _userInterrupted = true;
+    _ignoreTts = true;
+    _svc.cancelSpeak();
+    await _svc.stopBargeInMonitor();
+    _audioBuffer.clear();
+    try {
+      await _player.stop();
+    } catch (_) {}
+    if (_speakDone != null && !_speakDone!.isCompleted) {
+      _speakDone!.complete();
+    }
+
+    if (!mounted || _shouldClose || _openedVisual) return;
+    await _startListening();
+  }
+
   void _onPlaybackComplete() {
     if (_speakDone != null && !_speakDone!.isCompleted) {
       _speakDone!.complete();
@@ -249,8 +290,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     try {
       await _player.stop();
     } catch (_) {}
+    await _svc.stopBargeInMonitor();
     _endOfTurnTimer?.cancel();
     _audioBuffer.clear();
+    _ignoreTts = false;
 
     if (!mounted) return;
     setState(() {
@@ -263,7 +306,10 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   Future<void> _finishListeningAndCallAi() async {
-    if (_phase != _VoicePhase.listening || _turnInFlight) return;
+    if (_phase != _VoicePhase.listening) return;
+    // Normal path: ignore while a turn is running. After barge-in, accept the
+    // new utterance and queue it until the interrupted turn finishes.
+    if (_turnInFlight && !_userInterrupted) return;
     _endOfTurnTimer?.cancel();
 
     final spoken = _finalText.trim().isNotEmpty
@@ -278,6 +324,19 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           _phase = _VoicePhase.idle;
           _errorText = 'No speech detected. Tap the orb to try again.';
         });
+      }
+      return;
+    }
+
+    if (_turnInFlight && _userInterrupted) {
+      _pendingAfterInterrupt = spoken;
+      if (mounted) {
+        setState(() {
+          _bubbles.add(_ChatBubble(isUser: true, text: spoken));
+          _phase = _VoicePhase.thinking;
+          _errorText = null;
+        });
+        _scrollChatToEnd();
       }
       return;
     }
@@ -319,6 +378,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     var didSpeak = false;
     _openedVisual = false;
     _shouldClose = false;
+    _userInterrupted = false;
+    _pendingAfterInterrupt = null;
 
     try {
       final assistant = appState.createAiAssistant(
@@ -328,18 +389,19 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           voiceMode: true,
         ),
         onSpeak: (text) async {
+          if (_userInterrupted) return;
           didSpeak = true;
           await _speakAloud(text);
         },
         onAskUser: (question) async {
+          if (_userInterrupted) return '';
           // Show + speak the question, then listen for the next utterance.
           setState(() {
             _bubbles.add(_ChatBubble(isUser: false, text: question));
           });
           _scrollChatToEnd();
-          await _speakAloud(question);
-          // Collect next spoken answer via a one-shot listen cycle.
-          final answer = await _collectSpokenAnswer();
+          // Claim STT before TTS so barge-in mid-question feeds the collector.
+          final answer = await _askUserListenCycle(question);
           if (answer.isNotEmpty) {
             setState(() {
               _bubbles.add(_ChatBubble(isUser: true, text: answer));
@@ -414,23 +476,43 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     // Don't resume listening if we closed or handed off to the camera.
     if (!mounted || _shouldClose || _openedVisual) return;
 
+    // Barge-in queued a new utterance while this turn was still finishing.
+    final pending = _pendingAfterInterrupt;
+    _pendingAfterInterrupt = null;
+    if (pending != null && pending.trim().isNotEmpty) {
+      _userInterrupted = false;
+      // Bubble already added when queued.
+      await _runAiTurn(pending, showUserBubble: false);
+      return;
+    }
+
+    if (_userInterrupted) {
+      _userInterrupted = false;
+      // Already listening from barge-in (or restart if needed).
+      if (_phase != _VoicePhase.listening) {
+        await _startListening();
+      }
+      return;
+    }
+
     // After the AI finishes (and any speak audio ends), listen again so the
     // user can answer clarifying questions.
     await _startListening();
   }
 
-  /// One-shot: listen until VAD end-of-turn, return transcript.
-  Future<String> _collectSpokenAnswer() async {
+  /// Speak [question], then listen until VAD end-of-turn. Barge-in during the
+  /// question stops TTS and counts the next utterance as the answer.
+  Future<String> _askUserListenCycle(String question) async {
     final done = Completer<String>();
     var buffer = '';
     Timer? grace;
     _collectingAskAnswer = true;
 
-    void finish() {
+    void finish(String value) {
       if (done.isCompleted) return;
       grace?.cancel();
       _collectingAskAnswer = false;
-      done.complete(buffer.trim());
+      done.complete(value.trim());
     }
 
     late final StreamSubscription<VoiceEvent> sub;
@@ -445,31 +527,39 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         grace = Timer(const Duration(milliseconds: 700), () {
           sub.cancel();
           _svc.stopListening();
-          finish();
+          finish(buffer);
         });
       } else if (event is VoiceError) {
         sub.cancel();
-        finish();
+        finish(buffer);
       }
     });
 
-    await _svc.startListening();
-    if (mounted) setState(() => _phase = _VoicePhase.listening);
+    try {
+      await _speakAloud(question);
+      // Barge-in may already have opened the mic; otherwise start now.
+      await _svc.startListening();
+      if (mounted) setState(() => _phase = _VoicePhase.listening);
 
-    return done.future.timeout(
-      const Duration(seconds: 45),
-      onTimeout: () {
-        sub.cancel();
-        _svc.stopListening();
-        _collectingAskAnswer = false;
-        return buffer.trim();
-      },
-    );
+      return await done.future.timeout(
+        const Duration(seconds: 45),
+        onTimeout: () {
+          sub.cancel();
+          _svc.stopListening();
+          _collectingAskAnswer = false;
+          return buffer.trim();
+        },
+      );
+    } catch (_) {
+      sub.cancel();
+      _collectingAskAnswer = false;
+      rethrow;
+    }
   }
 
   Future<void> _speakAloud(String text) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty || !mounted) return;
+    if (trimmed.isEmpty || !mounted || _userInterrupted) return;
 
     setState(() {
       _bubbles.add(_ChatBubble(isUser: false, text: trimmed));
@@ -478,10 +568,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     });
     _scrollChatToEnd();
 
+    _ignoreTts = false;
     _audioBuffer.clear();
     _speakDone = Completer<void>();
+    await _svc.startBargeInMonitor();
     try {
       await _svc.speak(trimmed);
+      if (_userInterrupted) return;
       // Wait for playback (or error / timeout).
       await _speakDone!.future.timeout(
         const Duration(seconds: 45),
@@ -490,6 +583,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     } catch (e) {
       debugPrint('VoiceMode: speak failed: $e');
     } finally {
+      await _svc.stopBargeInMonitor();
       if (_speakDone != null && !_speakDone!.isCompleted) {
         _speakDone!.complete();
       }
@@ -498,6 +592,13 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   Future<void> _playBufferedAudio() async {
+    if (_ignoreTts || _userInterrupted) {
+      _audioBuffer.clear();
+      if (_speakDone != null && !_speakDone!.isCompleted) {
+        _speakDone!.complete();
+      }
+      return;
+    }
     if (_audioBuffer.isEmpty) {
       if (_speakDone != null && !_speakDone!.isCompleted) {
         _speakDone!.complete();
@@ -555,10 +656,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       case _VoicePhase.listening:
         _finishListeningAndCallAi();
       case _VoicePhase.speaking:
-        _player.stop();
-        if (_speakDone != null && !_speakDone!.isCompleted) {
-          _speakDone!.complete();
-        }
+        // Treat orb tap like barge-in: stop TTS and listen.
+        unawaited(_handleBargeIn());
       case _VoicePhase.thinking:
         break;
       case _VoicePhase.idle:

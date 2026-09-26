@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -33,6 +34,9 @@ class TtsAudioChunk extends VoiceEvent {
 
 /// The TTS stream finished sending all bytes.
 class TtsDone extends VoiceEvent {}
+
+/// User speech detected while TTS was playing (barge-in).
+class BargeInDetected extends VoiceEvent {}
 
 /// An error occurred.
 class VoiceError extends VoiceEvent {
@@ -80,6 +84,13 @@ class ElevenLabsService {
   StreamSubscription<Uint8List>? _audioSub;
 
   bool _listening = false;
+  bool _ttsCancelled = false;
+
+  /// Mic RMS monitor used while TTS plays so the user can interrupt.
+  bool _bargeInActive = false;
+  StreamSubscription<Uint8List>? _bargeInSub;
+  int _bargeInHotChunks = 0;
+  DateTime? _bargeInArmedAt;
 
   // ── STT ────────────────────────────────────────────────────────────────────
 
@@ -279,7 +290,101 @@ class ElevenLabsService {
     debugPrint('ElevenLabs STT: listening stopped');
   }
 
+  // ── Barge-in (speech while TTS plays) ─────────────────────────────────────
+
+  /// Opens the mic and watches PCM energy. Emits [BargeInDetected] once when
+  /// the user speaks over the AI (after a short arming delay to avoid echo).
+  Future<void> startBargeInMonitor({
+    double rmsThreshold = 0.06,
+    int consecutiveChunks = 4,
+    Duration armDelay = const Duration(milliseconds: 400),
+  }) async {
+    await stopBargeInMonitor();
+    if (_listening) return;
+
+    try {
+      final hasPerm = await _recorder.hasPermission();
+      if (!hasPerm) return;
+    } catch (_) {
+      return;
+    }
+
+    _bargeInHotChunks = 0;
+    _bargeInArmedAt = DateTime.now().add(armDelay);
+    _bargeInActive = true;
+
+    try {
+      final stream = await _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+      );
+
+      _bargeInSub = stream.listen((chunk) {
+        if (!_bargeInActive) return;
+        final armedAt = _bargeInArmedAt;
+        if (armedAt != null && DateTime.now().isBefore(armedAt)) {
+          return;
+        }
+
+        final rms = _pcm16Rms(chunk);
+        if (rms >= rmsThreshold) {
+          _bargeInHotChunks += 1;
+          if (_bargeInHotChunks >= consecutiveChunks) {
+            _bargeInActive = false;
+            debugPrint('ElevenLabs: barge-in detected (rms=$rms)');
+            _emit(BargeInDetected());
+            // Stop mic async; don't block the stream callback.
+            unawaited(stopBargeInMonitor());
+          }
+        } else {
+          _bargeInHotChunks = 0;
+        }
+      });
+      debugPrint('ElevenLabs: barge-in monitor started');
+    } catch (e) {
+      debugPrint('ElevenLabs: barge-in monitor failed: $e');
+      _bargeInActive = false;
+    }
+  }
+
+  /// Stops the barge-in mic monitor (safe if not running).
+  Future<void> stopBargeInMonitor() async {
+    _bargeInActive = false;
+    _bargeInHotChunks = 0;
+    _bargeInArmedAt = null;
+    await _bargeInSub?.cancel();
+    _bargeInSub = null;
+    // Only stop the recorder if we aren't in a normal STT listen session.
+    if (!_listening) {
+      try {
+        await _recorder.stop();
+      } catch (_) {}
+    }
+  }
+
+  static double _pcm16Rms(Uint8List chunk) {
+    final sampleCount = chunk.length ~/ 2;
+    if (sampleCount == 0) return 0;
+    var sumSq = 0.0;
+    for (var i = 0; i < sampleCount; i++) {
+      final lo = chunk[i * 2];
+      final hi = chunk[i * 2 + 1];
+      var sample = lo | (hi << 8);
+      if (sample >= 0x8000) sample -= 0x10000;
+      sumSq += sample * sample;
+    }
+    return math.sqrt(sumSq / sampleCount) / 32768.0;
+  }
+
   // ── TTS ────────────────────────────────────────────────────────────────────
+
+  /// Stops emitting further TTS chunks for the in-flight [speak] call.
+  void cancelSpeak() {
+    _ttsCancelled = true;
+  }
 
   /// Converts [text] to speech using ElevenLabs TTS and emits
   /// [TtsAudioChunk] events with streaming MP3 bytes, followed by [TtsDone].
@@ -289,6 +394,8 @@ class ElevenLabsService {
       _emit(VoiceError('ElevenLabs API key is missing. Set ELEVENLABS_API_KEY with --dart-define.'));
       return;
     }
+
+    _ttsCancelled = false;
 
     final voiceId = AppConfig.elevenLabsVoiceId;
     final primaryModel = AppConfig.elevenLabsTtsModel;
@@ -304,6 +411,7 @@ class ElevenLabsService {
     String? lastError;
 
     for (final modelId in modelsToTry) {
+      if (_ttsCancelled) return;
       debugPrint('ElevenLabs TTS: trying model $modelId with voice $voiceId...');
       final (success, errorMsg) = await _fetchTtsStream(
         voiceId: voiceId,
@@ -319,7 +427,9 @@ class ElevenLabsService {
       debugPrint('ElevenLabs TTS: model $modelId failed ($lastError), trying fallback...');
     }
 
-    _emit(VoiceError(lastError ?? 'TTS synthesis failed. Check your API key and voice ID.'));
+    if (!_ttsCancelled) {
+      _emit(VoiceError(lastError ?? 'TTS synthesis failed. Check your API key and voice ID.'));
+    }
   }
 
   Future<(bool, String?)> _fetchTtsStream({
@@ -355,11 +465,17 @@ class ElevenLabsService {
       }
 
       await for (final chunk in response.stream) {
+        if (_ttsCancelled) {
+          debugPrint('ElevenLabs TTS: cancelled mid-stream');
+          return (true, null);
+        }
         _emit(TtsAudioChunk(Uint8List.fromList(chunk)));
       }
 
-      _emit(TtsDone());
-      debugPrint('ElevenLabs TTS: streaming finished successfully with $modelId');
+      if (!_ttsCancelled) {
+        _emit(TtsDone());
+        debugPrint('ElevenLabs TTS: streaming finished successfully with $modelId');
+      }
       return (true, null);
     } catch (e) {
       debugPrint('ElevenLabs TTS exception ($modelId): $e');
@@ -375,6 +491,7 @@ class ElevenLabsService {
 
   /// Releases all resources.
   Future<void> dispose() async {
+    await stopBargeInMonitor();
     await stopListening();
     await _eventController.close();
     _recorder.dispose();
