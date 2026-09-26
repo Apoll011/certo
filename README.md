@@ -21,6 +21,7 @@ Deferred (stubbed): Voice mode, Camera/scan flow, Caregiver.
 
 - Flutter (Material 3)
 - [provider](https://pub.dev/packages/provider) for state
+- `flutter_localizations` + `intl` for English/Portuguese (follows the system locale)
 
 ## Run
 
