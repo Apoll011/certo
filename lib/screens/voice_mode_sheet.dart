@@ -6,11 +6,27 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 
 import '../services/elevenlabs_service.dart';
-import '../theme/app_colors.dart';
-import '../widgets/gradient_orb.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Random responses the AI speaks after transcription.
+//  Design tokens – dark navy voice palette
+// ─────────────────────────────────────────────────────────────────────────────
+class _VC {
+  static const bg = Color(0xFF0D1B2E);
+  static const bgCard = Color(0xFF182438);
+  static const orbBlue = Color(0xFF8EC5FC);
+  static const orbPurple = Color(0xFFAB8FF0);
+  static const orbPink = Color(0xFFE0C3FC);
+  static const orbHighlight = Color(0xFFD6EEFF);
+  static const waveActive = Color(0xFF4C7CF4);
+  static const waveIdle = Color(0xFF2A3E66);
+  static const textPrimary = Colors.white;
+  static const textSub = Color(0xFF7B9CC5);
+  static const textHint = Color(0xFF4A6A9A);
+  static const divider = Color(0xFF243350);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Random AI phrases
 // ─────────────────────────────────────────────────────────────────────────────
 const _randomPhrases = [
   "Got it! I'll keep that in mind for your next dose.",
@@ -29,33 +45,26 @@ String _randomPhrase() =>
     _randomPhrases[Random().nextInt(_randomPhrases.length)];
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Voice session state
+//  Voice session phase
 // ─────────────────────────────────────────────────────────────────────────────
-enum _VoicePhase {
-  listening, // mic open, transcribing
-  thinking, // got final transcript, building TTS
-  speaking, // playing audio
-  idle, // done
-}
+enum _VoicePhase { listening, thinking, speaking, idle }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Entry-point helper
+//  Entry-point
 // ─────────────────────────────────────────────────────────────────────────────
-
-/// Shows the voice mode as a full-screen modal bottom sheet.
 Future<void> showVoiceMode(BuildContext context) {
   return showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
+    useSafeArea: false,
     builder: (_) => const _VoiceModeSheet(),
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  _VoiceModeSheet
+//  Sheet root
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _VoiceModeSheet extends StatefulWidget {
   const _VoiceModeSheet();
 
@@ -64,36 +73,87 @@ class _VoiceModeSheet extends StatefulWidget {
 }
 
 class _VoiceModeSheetState extends State<_VoiceModeSheet>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  // ── services ────────────────────────────────────────────────────────────
   late final ElevenLabsService _svc;
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulse;
   StreamSubscription<VoiceEvent>? _eventSub;
-
   final AudioPlayer _player = AudioPlayer();
 
+  // ── session state ────────────────────────────────────────────────────────
   _VoicePhase _phase = _VoicePhase.listening;
   String _partialText = '';
   String _finalText = '';
   String _aiResponse = '';
-  String? _errorText;
-
-  // Buffer streaming TTS bytes
   final List<int> _audioBuffer = [];
+
+  // ── orb animation: gentle float + scale ──────────────────────────────────
+  late final AnimationController _orbCtrl;
+  late final Animation<double> _orbScale;
+  late final Animation<double> _orbFloat;
+
+  // ── waveform bars animation ───────────────────────────────────────────────
+  late final AnimationController _waveCtrl;
+  static const int _barCount = 11;
+  late final List<Animation<double>> _barAnims;
+
+  // ── orb morph animation (idle shape shift) ───────────────────────────────
+  late final AnimationController _morphCtrl;
+  late final Animation<double> _morphAnim;
 
   @override
   void initState() {
     super.initState();
+    _initAnimations();
+    _initVoice();
+  }
 
-    _pulseCtrl = AnimationController(
+  void _initAnimations() {
+    // Orb breathe / float
+    _orbCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 3200),
     )..repeat(reverse: true);
 
-    _pulse = Tween<double>(begin: 1.0, end: 1.18).animate(
-      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
+    _orbScale = Tween<double>(begin: 0.96, end: 1.04).animate(
+      CurvedAnimation(parent: _orbCtrl, curve: Curves.easeInOut),
+    );
+    _orbFloat = Tween<double>(begin: -6, end: 6).animate(
+      CurvedAnimation(parent: _orbCtrl, curve: Curves.easeInOut),
     );
 
+    // Orb morph
+    _morphCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 4500),
+    )..repeat(reverse: true);
+    _morphAnim = CurvedAnimation(parent: _morphCtrl, curve: Curves.easeInOut);
+
+    // Waveform bars — each bar has its own looping phase offset
+    _waveCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+
+    final rand = Random(42);
+    _barAnims = List.generate(_barCount, (i) {
+      final minH = 0.12 + rand.nextDouble() * 0.1;
+      final maxH = 0.45 + rand.nextDouble() * 0.55;
+      final begin = i.isEven ? minH : maxH;
+      final end = i.isEven ? maxH : minH;
+      return Tween<double>(begin: begin, end: end).animate(
+        CurvedAnimation(
+          parent: _waveCtrl,
+          curve: Interval(
+            (i / _barCount) * 0.5,
+            ((i / _barCount) * 0.5) + 0.5,
+            curve: Curves.easeInOut,
+          ),
+        ),
+      );
+    });
+  }
+
+  void _initVoice() {
     _svc = ElevenLabsService();
     _eventSub = _svc.events.listen(_onEvent);
     _svc.startListening();
@@ -101,15 +161,16 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
 
   @override
   void dispose() {
-    _pulseCtrl.dispose();
+    _orbCtrl.dispose();
+    _morphCtrl.dispose();
+    _waveCtrl.dispose();
     _eventSub?.cancel();
     _svc.dispose();
     _player.dispose();
     super.dispose();
   }
 
-  // ── event handler ──────────────────────────────────────────────────────────
-
+  // ── event handler ────────────────────────────────────────────────────────
   void _onEvent(VoiceEvent event) {
     if (!mounted) return;
     switch (event) {
@@ -122,7 +183,6 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
           _finalText = (_finalText.isEmpty ? '' : '$_finalText ') + text;
           _partialText = '';
         });
-        // After receiving final transcript, stop listening and generate TTS.
         _finishListening();
 
       case TtsAudioChunk(:final bytes):
@@ -131,21 +191,16 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
       case TtsDone():
         _playBufferedAudio();
 
-      case VoiceError(:final message):
-        setState(() {
-          _errorText = message;
-          _phase = _VoicePhase.idle;
-        });
-        _pulseCtrl.stop();
+      case VoiceError():
+        setState(() => _phase = _VoicePhase.idle);
     }
   }
 
   Future<void> _finishListening() async {
     if (_phase != _VoicePhase.listening) return;
     setState(() => _phase = _VoicePhase.thinking);
+    _waveCtrl.stop();
     await _svc.stopListening();
-
-    // Pick a random phrase and speak it.
     final phrase = _randomPhrase();
     setState(() => _aiResponse = phrase);
     await _svc.speak(phrase);
@@ -161,266 +216,391 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
     });
   }
 
-  // ── UI ─────────────────────────────────────────────────────────────────────
+  // ── helpers ──────────────────────────────────────────────────────────────
+  String get _displayTranscript {
+    if (_finalText.isNotEmpty) return '"$_finalText"';
+    if (_partialText.isNotEmpty) return '"$_partialText"';
+    return '';
+  }
 
+  String get _phaseLabel {
+    return switch (_phase) {
+      _VoicePhase.listening => 'Listening...',
+      _VoicePhase.thinking => 'Thinking...',
+      _VoicePhase.speaking => _aiResponse,
+      _VoicePhase.idle => 'Done',
+    };
+  }
+
+  // ── build ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final screenH = MediaQuery.of(context).size.height;
-
-    return Container(
-      height: screenH * 0.88,
-      decoration: const BoxDecoration(
-        color: AppColors.alarmBackground,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-      ),
+    return Material(
+      color: _VC.bg,
       child: SafeArea(
-        top: false,
         child: Column(
           children: [
-            // ── drag handle ──
-            const SizedBox(height: 12),
-            Center(
-              child: Container(
-                width: 44,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const Spacer(),
-
-            // ── orb ─────────────────────────────────────────────────────────
-            AnimatedBuilder(
-              animation: _pulse,
-              builder: (_, child) => Transform.scale(
-                scale: _phase == _VoicePhase.listening ? _pulse.value : 1.0,
-                child: child,
-              ),
-              child: GradientOrb(
-                size: 180,
-                blur: 60,
-                spread: 20,
-                child: Center(
-                  child: Icon(
-                    _orbIcon(),
-                    color: Colors.white.withValues(alpha: 0.9),
-                    size: 64,
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 32),
-
-            // ── phase label ─────────────────────────────────────────────────
-            Text(
-              _phaseLabel(),
-              style: const TextStyle(
-                color: AppColors.success,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.4,
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // ── transcription / response area ────────────────────────────────
+            // ── top bar ────────────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: Column(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Row(
                 children: [
-                  // Live / final transcription
-                  if (_finalText.isNotEmpty || _partialText.isNotEmpty)
-                    _BubbleCard(
-                      icon: Icons.mic_rounded,
-                      color: AppColors.primarySoft,
-                      textColor: AppColors.textPrimary,
-                      text: _finalText.isNotEmpty
-                          ? _finalText
-                          : _partialText,
-                      isPartial: _finalText.isEmpty && _partialText.isNotEmpty,
-                    ),
-
-                  if (_finalText.isNotEmpty && _aiResponse.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    _BubbleCard(
-                      icon: Icons.auto_awesome_rounded,
-                      color: AppColors.successSoft,
-                      textColor: AppColors.textPrimary,
-                      text: _aiResponse,
-                      isPartial: _phase == _VoicePhase.thinking,
-                    ),
-                  ],
-
-                  if (_errorText != null) ...[
-                    const SizedBox(height: 16),
-                    _BubbleCard(
-                      icon: Icons.error_outline_rounded,
-                      color: AppColors.dangerSoft,
-                      textColor: AppColors.danger,
-                      text: _errorText!,
-                    ),
-                  ],
+                  _IconBtn(
+                    icon: Icons.close,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  const Spacer(),
+                  _IconBtn(icon: Icons.settings_outlined, onTap: () {}),
                 ],
               ),
             ),
 
-            const Spacer(),
+            const Spacer(flex: 2),
 
-            // ── bottom action ────────────────────────────────────────────────
-            _BottomAction(phase: _phase, onStop: _finishListening),
+            // ── orb ────────────────────────────────────────────────────────
+            AnimatedBuilder(
+              animation: Listenable.merge([_orbCtrl, _morphCtrl]),
+              builder: (context, child) => Transform.translate(
+                offset: Offset(0, _orbFloat.value),
+                child: Transform.scale(
+                  scale: _orbScale.value,
+                  child: _GlassOrb(morphT: _morphAnim.value),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 36),
+
+            // ── phase label ────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Text(
+                _phaseLabel,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _VC.textPrimary,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // ── transcript ─────────────────────────────────────────────────
+            if (_displayTranscript.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                child: Text(
+                  _displayTranscript,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _VC.textSub,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                    height: 1.5,
+                  ),
+                ),
+              ),
+
+            const SizedBox(height: 28),
+
+            // ── waveform ───────────────────────────────────────────────────
+            _WaveformBars(
+              anims: _barAnims,
+              active: _phase == _VoicePhase.listening,
+            ),
+
+            const Spacer(flex: 3),
+
+            // ── suggestions card ───────────────────────────────────────────
+            _SuggestionsCard(),
+
             const SizedBox(height: 24),
           ],
         ),
       ),
     );
   }
-
-  IconData _orbIcon() {
-    return switch (_phase) {
-      _VoicePhase.listening => Icons.mic_rounded,
-      _VoicePhase.thinking => Icons.hourglass_top_rounded,
-      _VoicePhase.speaking => Icons.volume_up_rounded,
-      _VoicePhase.idle => Icons.check_circle_outline_rounded,
-    };
-  }
-
-  String _phaseLabel() {
-    return switch (_phase) {
-      _VoicePhase.listening => 'LISTENING',
-      _VoicePhase.thinking => 'THINKING',
-      _VoicePhase.speaking => 'SPEAKING',
-      _VoicePhase.idle => 'DONE',
-    };
-  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Sub-widgets
+//  Glass Orb
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _BubbleCard extends StatelessWidget {
-  const _BubbleCard({
-    required this.icon,
-    required this.color,
-    required this.textColor,
-    required this.text,
-    this.isPartial = false,
-  });
+class _GlassOrb extends StatelessWidget {
+  const _GlassOrb({required this.morphT});
 
-  final IconData icon;
-  final Color color;
-  final Color textColor;
-  final String text;
-  final bool isPartial;
+  final double morphT;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: textColor.withValues(alpha: 0.7), size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              isPartial ? '$text…' : text,
-              style: TextStyle(
-                color: textColor.withValues(alpha: isPartial ? 0.6 : 1.0),
-                fontSize: 16,
-                fontStyle:
-                    isPartial ? FontStyle.italic : FontStyle.normal,
-                height: 1.45,
-              ),
-            ),
-          ),
-        ],
+    const size = 220.0;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(
+        painter: _OrbPainter(morphT: morphT),
       ),
     );
   }
 }
 
-class _BottomAction extends StatelessWidget {
-  const _BottomAction({required this.phase, required this.onStop});
+class _OrbPainter extends CustomPainter {
+  const _OrbPainter({required this.morphT});
+  final double morphT;
 
-  final _VoicePhase phase;
-  final VoidCallback onStop;
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r = size.width / 2;
+
+    // Outer glow
+    final glowPaint = Paint()
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 32)
+      ..shader = RadialGradient(
+        colors: [
+          _VC.orbPurple.withValues(alpha: 0.55),
+          _VC.orbBlue.withValues(alpha: 0.15),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 0.6, 1.0],
+      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r * 1.25));
+    canvas.drawCircle(Offset(cx, cy), r * 1.25, glowPaint);
+
+    // Main sphere body — radial gradient
+    final bodyPaint = Paint()
+      ..shader = RadialGradient(
+        center: const Alignment(-0.3, -0.35),
+        radius: 1.0,
+        colors: const [
+          _VC.orbHighlight,
+          _VC.orbBlue,
+          _VC.orbPurple,
+          Color(0xFFCDA8F5),
+          _VC.orbPink,
+        ],
+        stops: const [0.0, 0.25, 0.55, 0.78, 1.0],
+      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r));
+    canvas.drawCircle(Offset(cx, cy), r, bodyPaint);
+
+    // Inner specular blob (morphing) — top-left light catch
+    final t = morphT;
+    final blobPath = Path();
+    final bx = cx - r * 0.18 + t * r * 0.08;
+    final by = cy - r * 0.22 - t * r * 0.06;
+    final br = r * (0.30 + t * 0.06);
+    blobPath.addOval(Rect.fromCenter(
+      center: Offset(bx, by),
+      width: br * 1.45,
+      height: br,
+    ));
+    final specPaint = Paint()
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18)
+      ..shader = RadialGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.55 - t * 0.1),
+          Colors.white.withValues(alpha: 0.0),
+        ],
+      ).createShader(Rect.fromCenter(
+        center: Offset(bx, by),
+        width: br * 2,
+        height: br * 2,
+      ));
+    canvas.drawPath(blobPath, specPaint);
+
+    // Secondary specular — lower-right subtle
+    final specPaint2 = Paint()
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14)
+      ..shader = RadialGradient(
+        colors: [
+          _VC.orbPink.withValues(alpha: 0.4 + t * 0.15),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCenter(
+        center: Offset(cx + r * 0.3, cy + r * 0.28),
+        width: r,
+        height: r,
+      ));
+    canvas.drawCircle(Offset(cx + r * 0.3, cy + r * 0.28), r * 0.35, specPaint2);
+
+    // Edge rim highlight
+    final rimPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..shader = SweepGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.35),
+          Colors.white.withValues(alpha: 0.0),
+          Colors.white.withValues(alpha: 0.18),
+          Colors.white.withValues(alpha: 0.35),
+        ],
+        stops: const [0.0, 0.4, 0.75, 1.0],
+        startAngle: -pi / 4,
+        endAngle: 2 * pi - pi / 4,
+      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r));
+    canvas.drawCircle(Offset(cx, cy), r - 0.75, rimPaint);
+  }
+
+  @override
+  bool shouldRepaint(_OrbPainter old) => old.morphT != morphT;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Animated waveform bars
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _WaveformBars extends StatelessWidget {
+  const _WaveformBars({required this.anims, required this.active});
+
+  final List<Animation<double>> anims;
+  final bool active;
 
   @override
   Widget build(BuildContext context) {
-    if (phase == _VoicePhase.listening) {
-      return GestureDetector(
-        onTap: onStop,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-          decoration: BoxDecoration(
-            color: AppColors.danger,
-            borderRadius: BorderRadius.circular(40),
-          ),
-          child: const Row(
+    const maxH = 48.0;
+    const barW = 3.5;
+    const gap = 4.5;
+
+    return AnimatedBuilder(
+      animation: anims.first,
+      builder: (_, child) {
+        return SizedBox(
+          height: maxH,
+          child: Row(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.stop_rounded, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Text(
-                'Stop Listening',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: List.generate(anims.length, (i) {
+              final h = active
+                  ? (anims[i].value * maxH).clamp(4.0, maxH)
+                  : 4.0;
+              return Padding(
+                padding: EdgeInsets.only(right: i < anims.length - 1 ? gap : 0),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 80),
+                  width: barW,
+                  height: h,
+                  decoration: BoxDecoration(
+                    color: active ? _VC.waveActive : _VC.waveIdle,
+                    borderRadius: BorderRadius.circular(barW / 2),
+                  ),
+                ),
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  "You can also say" card
+// ─────────────────────────────────────────────────────────────────────────────
+
+const _suggestions = [
+  'Scan this medication',
+  'Read the instructions',
+  'Mark it as taken',
+  'When do I take Amoxicillin?',
+];
+
+class _SuggestionsCard extends StatelessWidget {
+  const _SuggestionsCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: _VC.bgCard,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _VC.divider, width: 1),
+        ),
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.help_outline_rounded,
+                  color: _VC.textSub,
+                  size: 16,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'You can also say:',
+                  style: TextStyle(
+                    color: _VC.textPrimary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ..._suggestions.map(
+              (s) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(top: 7),
+                      width: 4,
+                      height: 4,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _VC.textHint,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      s,
+                      style: const TextStyle(
+                        color: _VC.textSub,
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-      );
-    }
+      ),
+    );
+  }
+}
 
-    if (phase == _VoicePhase.idle) {
-      return GestureDetector(
-        onTap: () => Navigator.of(context).pop(),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
-          decoration: BoxDecoration(
-            color: AppColors.success,
-            borderRadius: BorderRadius.circular(40),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.check_rounded, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Text(
-                'Done',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                ),
-              ),
-            ],
-          ),
+// ─────────────────────────────────────────────────────────────────────────────
+//  Small icon button (top-bar close / settings)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _IconBtn extends StatelessWidget {
+  const _IconBtn({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: _VC.bgCard,
+          shape: BoxShape.circle,
+          border: Border.all(color: _VC.divider),
         ),
-      );
-    }
-
-    // Thinking / speaking — show a spinner.
-    return const SizedBox(
-      width: 36,
-      height: 36,
-      child: CircularProgressIndicator(
-        color: AppColors.secondary,
-        strokeWidth: 3,
+        child: Icon(icon, color: _VC.textSub, size: 18),
       ),
     );
   }
