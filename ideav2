@@ -29,28 +29,42 @@ Certo closes that gap for anyone in that position: schedule → expected item �
 
 ---
 
-## 2. Who Certo Is For
+2. Who Verifi Is For
 
-Certo is built first as something a person manages for **themselves** — a daily safety check that removes the guesswork of "is this really what I'm supposed to take right now." The caregiver and institutional use cases are the same product, used by someone helping another person instead of themselves, and they are explicitly a **later stage**, not part of the hackathon build (see Section 5).
+In one line: Verifi is for elderly people juggling several medications — and it matters most for the ones among them who can't just glance at a label and be sure it's right.
 
-### Individuals (core, self-serve — this is what gets built and demoed)
-- People managing multiple medications or a complicated schedule.
-- Elderly users who want a second check they can trust.
-- Blind or low-vision users who can't verify a label by sight.
-- People with low health literacy or cognitive load who find medication instructions hard to parse.
+The main group: elderly people managing multiple medications. This is who Verifi is built for, first and foremost. It's a big, well-documented group in Portugal — over half of seniors take several regular medications, and 1 in 4 live alone with no one nearby to double-check them. That's the group Verifi has to win over first, because that's also who a paying care agency or facility will actually be using it on later (see Section 12).
 
-This is the group the everyday experience is designed around, and where trust in the product has to be earned first — before it makes sense to anyone helping someone else, and before any institutional buyer would take it seriously.
+Within that group, some people need it more urgently:
 
-### Family caregivers (roadmap, not MVP)
-- A spouse, adult child, or family member helping someone manage medication, with that person's explicit permission.
-- Wants visibility into whether medication was taken, missed, or mismatched — without taking over the whole process.
+People who can't read the label well (low vision).
+People who find medical instructions hard to understand (low health literacy).
+People who get confused between similar-looking boxes (cognitive load).
 
-### Professional caregivers and small care facilities (roadmap — the business wedge)
-- Home-care aides and small elder-care facility staff administering medication to multiple clients per shift.
-- Real liability and training cost today; genuine willingness to pay via their employer.
-- This is where a sustainable business model comes from, but only once the individual-facing product has proven the core mechanic works — not before, and not in the hackathon build.
+These are not a separate audience — they're the sharpest, most urgent version of the same problem every elderly person managing medication has. Verifi is designed with their needs in mind first (that's why it's voice-first, not just screen-based), but it isn't only for them. Making it only for them would actually be a mistake — it would shrink both the market story and the group of people a paying facility would use it on.
 
----
+Why not just say "for low-vision/cognitive-load users" as the headline? Because the numbers don't back that up as tightly in Portugal specifically (good data exists on elderly people managing many medications, but not on age-related vision loss here), and the hackathon build doesn't include full accessibility features yet — so leading with that claim would invite a question the demo can't fully answer. The safer, stronger, and still-honest claim is: built for elderly medication management, sharpest for those who struggle to self-check.
+
+Who actually uses it, stage by stage:
+
+Individuals (core — this is what gets built and demoed first)
+
+People managing multiple medications or a complicated schedule.
+Elderly users who want a second, trustworthy check.
+Within this group: people with low vision, low health literacy, or cognitive load — the ones who benefit most.
+
+This is where trust has to be earned first — before it makes sense to build the caregiver version, and before any business would take it seriously.
+
+Family caregivers (roadmap, not built for the hackathon)
+
+A spouse or adult child helping someone manage medication, with that person's permission.
+Wants to know medication was taken, missed, or mismatched — without taking over the whole process.
+
+Professional caregivers and small care facilities (roadmap — this is the actual business)
+
+Home-care aides and small elder-care facilities managing multiple clients per shift.
+Their clients are a mix — some low-vision or cognitively impaired, many just elderly people on several prescriptions who want a second check.
+Real cost and risk for them today if a mistake happens, which is why they'd realistically pay for this — but only once the individual product has proven itself first (see Sections 10 and 12).
 
 ## 3. Core Product Principle
 
