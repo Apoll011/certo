@@ -164,11 +164,11 @@ class StartVisualModeTool extends AiTool {
 
   @override
   String get description =>
-      'Open the camera scanner. Use intent="verify" for "is this my medication?", '
-      'intent="add_medication" when the user wants to add a package, '
+      'Open the camera scanner immediately. Use for any check/scan/identify request. '
+      'intent="verify" for "is this my medication?", '
+      'intent="add_medication" to add a package, '
       'intent="identify" for "what is this medicine?". '
-      'Set auto_capture=true (default) so the app snaps a photo ~1s after opening. '
-      'Pass prompt for any extra instructions. Prefer this over asking the user to open the camera themselves.';
+      'Set auto_capture=true (default). Do not ask the user to open the camera themselves — call this tool instead of announcing it.';
 
   @override
   Map<String, dynamic> get parameters => {

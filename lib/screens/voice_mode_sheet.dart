@@ -389,7 +389,21 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           voiceMode: true,
         ),
         onSpeak: (text) async {
-          if (_userInterrupted) return;
+          if (_userInterrupted || _openedVisual || _shouldClose) return;
+          // Skip process-filler about opening the camera — visual handoff speaks for itself.
+          final lower = text.toLowerCase();
+          if (lower.contains('open') &&
+              (lower.contains('camera') ||
+                  lower.contains('visual') ||
+                  lower.contains('scan'))) {
+            return;
+          }
+          if (lower.contains("i'm opening") ||
+              lower.contains('i am opening') ||
+              lower.contains('let me open') ||
+              lower.contains('opening the camera')) {
+            return;
+          }
           didSpeak = true;
           await _speakAloud(text);
         },
@@ -414,6 +428,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           if (!mounted) return;
           _openedVisual = true;
           _shouldClose = true;
+          _svc.cancelSpeak();
+          try {
+            await _player.stop();
+          } catch (_) {}
+          if (_speakDone != null && !_speakDone!.isCompleted) {
+            _speakDone!.complete();
+          }
+          if (!mounted) return;
           // Replace voice with visual so close/pop can't remove the camera.
           await Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(

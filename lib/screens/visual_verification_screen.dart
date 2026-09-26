@@ -75,6 +75,12 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
   bool _flashOn = false;
   bool _isProcessing = false;
   bool _scanning = false;
+  /// True only while waiting for the initial auto-capture timer.
+  bool _awaitingAutoCapture = false;
+  bool _medicationCreated = false;
+  List<String> _pendingTimes = [];
+  bool _listeningForAnswer = false;
+  String _askPartial = '';
 
   late VisualVerificationStatus _status;
   String _identifiedName = '';
@@ -124,8 +130,18 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
         _ttsBuffer.addAll(bytes);
       case TtsDone():
         _playTtsBuffer();
+      case TranscriptionPartial(:final text):
+        if (_listeningForAnswer && mounted) {
+          setState(() => _askPartial = text);
+        }
+      case TranscriptionFinal(:final text):
+        if (_listeningForAnswer && mounted && text.trim().isNotEmpty) {
+          setState(() {
+            _askPartial = text.trim();
+          });
+        }
       case VoiceError(:final message):
-        debugPrint('VisualMode TTS error: $message');
+        debugPrint('VisualMode TTS/STT error: $message');
         if (_ttsDone != null && !_ttsDone!.isCompleted) _ttsDone!.complete();
       default:
         break;
@@ -221,8 +237,11 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
         final delay = Duration(
           milliseconds: widget.request.autoCaptureDelayMs.clamp(300, 5000),
         );
+        setState(() => _awaitingAutoCapture = true);
         _autoCaptureTimer = Timer(delay, () {
-          if (mounted && !_isProcessing) _captureAndAnalyze();
+          if (!mounted) return;
+          setState(() => _awaitingAutoCapture = false);
+          if (!_isProcessing) _captureAndAnalyze();
         });
       }
     } catch (e) {
@@ -292,21 +311,144 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
     }
   }
 
+  void _stopScanVisual() {
+    _scanCtrl.stop();
+    _scanCtrl.reset();
+    _scanning = false;
+  }
+
+  /// Ask via spoken answer (STT). Typed submit can still complete as fallback.
   Future<String> _askUser(String question) async {
     if (!mounted) return '';
-    setState(() {
-      _pendingQuestion = question;
-      _replyCtrl.clear();
-    });
-    // Also speak the question so the user hears it.
-    unawaited(_speak(question));
-    _askCompleter = Completer<String>();
-    _replyFocus.requestFocus();
-    final answer = await _askCompleter!.future;
+    _stopScanVisual();
     if (mounted) {
-      setState(() => _pendingQuestion = null);
+      setState(() {
+        _pendingQuestion = question;
+        _listeningForAnswer = true;
+        _askPartial = '';
+        _scanning = false;
+        _replyCtrl.clear();
+      });
     }
-    return answer;
+
+    await _speak(question);
+
+    _askCompleter = Completer<String>();
+
+    // Speech and typed fallback race on the same Completer.
+    unawaited(
+      _collectSpokenAnswer().then((spoken) {
+        final t = spoken.trim();
+        if (t.isNotEmpty &&
+            _askCompleter != null &&
+            !_askCompleter!.isCompleted) {
+          _askCompleter!.complete(t);
+        }
+      }),
+    );
+
+    final resolved = await _askCompleter!.future.timeout(
+      const Duration(seconds: 45),
+      onTimeout: () => '',
+    );
+    await _voice.stopListening();
+    _askCompleter = null;
+
+    _mergeTimesFromAnswer(resolved);
+
+    if (mounted) {
+      setState(() {
+        _pendingQuestion = null;
+        _listeningForAnswer = false;
+        _askPartial = '';
+      });
+    }
+    return resolved.trim();
+  }
+
+  Future<String> _collectSpokenAnswer() async {
+    final done = Completer<String>();
+    var buffer = '';
+    Timer? grace;
+
+    late final StreamSubscription<VoiceEvent> sub;
+    sub = _voice.events.listen((event) {
+      if (event is TranscriptionPartial) {
+        grace?.cancel();
+        if (mounted) setState(() => _askPartial = event.text);
+      } else if (event is TranscriptionFinal) {
+        buffer = buffer.isEmpty
+            ? event.text.trim()
+            : '$buffer ${event.text.trim()}';
+        if (mounted) setState(() => _askPartial = buffer);
+        grace?.cancel();
+        grace = Timer(const Duration(milliseconds: 700), () {
+          sub.cancel();
+          _voice.stopListening();
+          if (!done.isCompleted) done.complete(buffer.trim());
+        });
+      } else if (event is VoiceError) {
+        sub.cancel();
+        if (!done.isCompleted) done.complete(buffer.trim());
+      }
+    });
+
+    try {
+      await _voice.startListening();
+    } catch (e) {
+      debugPrint('VisualMode: STT start failed: $e');
+      sub.cancel();
+      return '';
+    }
+
+    return done.future.timeout(
+      const Duration(seconds: 45),
+      onTimeout: () {
+        sub.cancel();
+        _voice.stopListening();
+        return buffer.trim();
+      },
+    );
+  }
+
+  void _mergeTimesFromAnswer(String answer) {
+    final parsed = _parseTimesFromSpeech(answer);
+    if (parsed.isNotEmpty) {
+      _pendingTimes = parsed;
+    }
+  }
+
+  /// Pull simple time phrases out of spoken text.
+  List<String> _parseTimesFromSpeech(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return [];
+    final out = <String>[];
+    final re = RegExp(
+      r'\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\b',
+      caseSensitive: false,
+    );
+    for (final m in re.allMatches(text)) {
+      final hour = int.tryParse(m.group(1) ?? '') ?? 0;
+      final minute = m.group(2) ?? '00';
+      final meridiem = (m.group(3) ?? '').toLowerCase().replaceAll('.', '');
+      if (hour < 1 || hour > 12 && meridiem.isEmpty && hour > 23) continue;
+      if (meridiem.startsWith('a')) {
+        out.add('$hour:${minute.padLeft(2, '0')} AM');
+      } else if (meridiem.startsWith('p')) {
+        out.add('$hour:${minute.padLeft(2, '0')} PM');
+      } else if (hour >= 0 && hour <= 23) {
+        final h24 = hour;
+        final h12 = h24 == 0 ? 12 : (h24 > 12 ? h24 - 12 : h24);
+        final suffix = h24 >= 12 ? 'PM' : 'AM';
+        out.add('$h12:${minute.padLeft(2, '0')} $suffix');
+      }
+    }
+    // Meal anchors
+    final lower = text.toLowerCase();
+    for (final meal in ['breakfast', 'lunch', 'dinner', 'bedtime']) {
+      if (lower.contains(meal) && !out.contains(meal)) out.add(meal);
+    }
+    return out;
   }
 
   void _applyCard(VisualVerificationCardData data) {
@@ -322,7 +464,14 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       if (data.expectedMedicationName != null) {
         _expectedName = data.expectedMedicationName!;
       }
-      if (data.nextDoseTime != null) _nextDoseTime = data.nextDoseTime!;
+      if (data.nextDoseTime != null) {
+        _nextDoseTime = data.nextDoseTime!;
+        // Schedule hint from card can seed times for create.
+        if (_pendingTimes.isEmpty && data.nextDoseTime!.trim().isNotEmpty) {
+          final t = data.nextDoseTime!.trim();
+          if (!t.contains('—') && t != '-') _pendingTimes = [t];
+        }
+      }
       if (data.nextDoseInstruction != null) {
         _nextDoseInstruction = data.nextDoseInstruction!;
       }
@@ -330,6 +479,15 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       _canAdd = data.canAdd;
       _canConfirm = data.canConfirm;
     });
+  }
+
+  void _onAssistantEvent(AiAssistantEvent event) {
+    if (event is AiToolCallCompletedEvent &&
+        event.toolName == 'create_medication' &&
+        event.result.success) {
+      _medicationCreated = true;
+      if (mounted) setState(() => _canAdd = false);
+    }
   }
 
   AiAssistantService _buildAssistant(AppState appState) {
@@ -348,7 +506,6 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
         if (!_isProcessing) await _captureAndAnalyze();
       },
       onStartVisualMode: (_) async {
-        // Already in visual mode — ignore / recapture.
         if (!_isProcessing) await _captureAndAnalyze();
       },
     );
@@ -369,9 +526,11 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       return;
     }
 
+    _autoCaptureTimer?.cancel();
     setState(() {
       _isProcessing = true;
       _scanning = true;
+      _awaitingAutoCapture = false;
       _status = VisualVerificationStatus.identifying;
       _cameraError = null;
       _pendingQuestion = null;
@@ -383,12 +542,17 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
     try {
       final file = await cam.takePicture();
       final bytes = await File(file.path).readAsBytes();
-      final b64 = base64Encode(bytes);
+      // Scan glow only while capturing — stop once we have the frame.
+      if (mounted) {
+        _stopScanVisual();
+        setState(() => _scanning = false);
+      }
+
       if (!mounted) return;
+      final b64 = base64Encode(bytes);
 
       VisualVerificationCardData? card;
       final assistant = _buildAssistant(appState);
-      // Capture card via wrapper since createAiAssistant already wires callback.
       assistant.tools.register(
         ShowVisualVerificationResultTool(
           onShowResult: (data) {
@@ -402,6 +566,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
         imageBase64: b64,
         userPrompt: _promptForIntent(),
         history: List<ChatMessage>.of(_history),
+        onEvent: _onAssistantEvent,
       );
 
       _history
@@ -424,8 +589,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
         });
       }
     } finally {
-      _scanCtrl.stop();
-      _scanCtrl.reset();
+      _stopScanVisual();
       if (mounted) {
         setState(() {
           _isProcessing = false;
@@ -438,12 +602,16 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
   /// Follow-up conversation turn (text) after a photo analysis.
   Future<void> _sendFollowUp(String text) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty || _isProcessing) return;
+    if (trimmed.isEmpty) return;
+
+    // Completing an in-flight ask_user must work even while processing.
     if (_askCompleter != null && !_askCompleter!.isCompleted) {
       _askCompleter!.complete(trimmed);
       _replyCtrl.clear();
       return;
     }
+
+    if (_isProcessing) return;
 
     setState(() => _isProcessing = true);
     final appState = Provider.of<AppState>(context, listen: false);
@@ -452,6 +620,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       final result = await assistant.sendMessage(
         trimmed,
         history: List<ChatMessage>.of(_history),
+        onEvent: _onAssistantEvent,
       );
       _history
         ..clear()
@@ -463,16 +632,80 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
     }
   }
 
-  void _onConfirm() {
+  Future<bool> _ensureMedicationPersisted() async {
     final appState = Provider.of<AppState>(context, listen: false);
-    if (widget.intent == VisualModeIntent.addMedication ||
-        _status == VisualVerificationStatus.identified) {
+    final name = _identifiedName.trim();
+    if (name.isEmpty) return false;
+
+    if (_medicationCreated ||
+        findMedication(appState, name: name) != null) {
+      return true;
+    }
+
+    var times = List<String>.of(_pendingTimes);
+    if (times.isEmpty) {
+      final ans = await _askUser(
+        'What times should I schedule $name? For example, 8 AM and 8 PM.',
+      );
+      times = _parseTimesFromSpeech(ans);
+      if (times.isEmpty && ans.trim().isNotEmpty) {
+        // Use the raw answer as a single schedule hint.
+        times = [ans.trim()];
+      }
+      if (times.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Need at least one time to add this medication.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return false;
+      }
+    }
+
+    final dosage = _dosage.trim().isNotEmpty ? _dosage.trim() : '1 dose';
+    final instruction = _nextDoseInstruction.trim().isNotEmpty
+        ? _nextDoseInstruction.trim()
+        : 'As directed';
+    final category =
+        _category.trim().isNotEmpty ? _category.trim() : 'General';
+    final id =
+        'med_${DateTime.now().millisecondsSinceEpoch}_${math.Random().nextInt(9999)}';
+
+    await appState.addMedication(
+      Medication(
+        id: id,
+        name: name,
+        dosage: dosage,
+        instruction: instruction,
+        category: category,
+        notes: '',
+        times: times,
+        pillColorIndex: math.Random().nextInt(8),
+        status: MedicationStatus.active,
+        startedAt: DateTime.now(),
+      ),
+    );
+    _medicationCreated = true;
+    if (mounted) setState(() => _canAdd = false);
+    return true;
+  }
+
+  Future<void> _onConfirm() async {
+    final appState = Provider.of<AppState>(context, listen: false);
+
+    // Add-med flow: Done must actually persist the medication.
+    if (widget.intent == VisualModeIntent.addMedication) {
+      final ok = await _ensureMedicationPersisted();
+      if (!mounted || !ok) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             _identifiedName.isNotEmpty
-                ? '✓ "$_identifiedName"'
-                : '✓ Done',
+                ? '✓ Added "$_identifiedName"'
+                : '✓ Medication added',
           ),
           backgroundColor: const Color(0xFF15803D),
           behavior: SnackBarBehavior.floating,
@@ -481,6 +714,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       Navigator.of(context).pop();
       return;
     }
+
     final med = findMedication(
       appState,
       name: _identifiedName.isNotEmpty ? _identifiedName : _expectedName,
@@ -499,11 +733,21 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
   }
 
   Future<void> _onAddMedication() async {
-    // Kick a follow-up so AI creates it, or open add flow with name prefilled.
-    await _sendFollowUp(
-      'Please add "$_identifiedName"${_dosage.isNotEmpty ? ' $_dosage' : ''} '
-      'to my medications. Ask me if you need the times.',
+    final ok = await _ensureMedicationPersisted();
+    if (!mounted) return;
+    if (!ok) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _identifiedName.isNotEmpty
+              ? '✓ Added "$_identifiedName"'
+              : '✓ Medication added',
+        ),
+        backgroundColor: const Color(0xFF15803D),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
+    Navigator.of(context).pop();
   }
 
   void _openVoiceMode() {
@@ -523,12 +767,18 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
     if (_askCompleter != null && !_askCompleter!.isCompleted) {
       _askCompleter!.complete('');
     }
+    unawaited(_voice.stopListening());
+    _stopScanVisual();
     setState(() {
       _status = VisualVerificationStatus.identifying;
       _isProcessing = false;
+      _scanning = false;
       _matchMessage = '';
       _pendingQuestion = null;
+      _listeningForAnswer = false;
+      _askPartial = '';
       _canAdd = false;
+      _awaitingAutoCapture = false;
     });
   }
 
@@ -614,15 +864,33 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
             ),
           ),
 
-          if (_status == VisualVerificationStatus.identifying && !_isProcessing)
+          if (_status == VisualVerificationStatus.identifying &&
+              !_isProcessing &&
+              _awaitingAutoCapture)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 72,
+              left: 24,
+              right: 24,
+              child: const Text(
+                'Hold steady — capturing…',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  shadows: [Shadow(blurRadius: 10, color: Colors.black54)],
+                ),
+              ),
+            )
+          else if (_status == VisualVerificationStatus.identifying &&
+              !_isProcessing &&
+              !_awaitingAutoCapture)
             Positioned(
               top: MediaQuery.of(context).padding.top + 72,
               left: 24,
               right: 24,
               child: Text(
-                widget.request.autoCapture
-                    ? 'Hold steady — capturing…'
-                    : _hintText,
+                _hintText,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
@@ -653,12 +921,14 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
               canAdd: _canAdd,
               canConfirm: _canConfirm,
               pendingQuestion: _pendingQuestion,
+              listeningForAnswer: _listeningForAnswer,
+              askPartial: _askPartial,
               replyController: _replyCtrl,
               replyFocus: _replyFocus,
               bottomPad: bottomPad,
               onCapture: _captureAndAnalyze,
-              onConfirm: _onConfirm,
-              onAdd: _onAddMedication,
+              onConfirm: () => unawaited(_onConfirm()),
+              onAdd: () => unawaited(_onAddMedication()),
               onScanAnother: _resetToScan,
               onTryAgain: _resetToScan,
               onOpenVoice: _openVoiceMode,
@@ -768,6 +1038,8 @@ class _ResultSheet extends StatelessWidget {
     required this.canAdd,
     required this.canConfirm,
     required this.pendingQuestion,
+    required this.listeningForAnswer,
+    required this.askPartial,
     required this.replyController,
     required this.replyFocus,
     required this.bottomPad,
@@ -793,6 +1065,8 @@ class _ResultSheet extends StatelessWidget {
   final bool canAdd;
   final bool canConfirm;
   final String? pendingQuestion;
+  final bool listeningForAnswer;
+  final String askPartial;
   final TextEditingController replyController;
   final FocusNode replyFocus;
   final double bottomPad;
@@ -839,13 +1113,14 @@ class _ResultSheet extends StatelessWidget {
             if (pendingQuestion != null) ...[
               _AskBanner(
                 question: pendingQuestion!,
+                listening: listeningForAnswer,
+                partial: askPartial,
                 controller: replyController,
                 focusNode: replyFocus,
                 onSubmit: onSubmitReply,
               ),
-              const SizedBox(height: 12),
-            ],
-            switch (status) {
+            ] else
+              switch (status) {
               VisualVerificationStatus.identifying => _identifying(),
               VisualVerificationStatus.confirmedMatch ||
               VisualVerificationStatus.identified =>
@@ -857,9 +1132,11 @@ class _ResultSheet extends StatelessWidget {
                           : 'Match',
                   primaryLabel: canConfirm
                       ? (intent == VisualModeIntent.addMedication
-                          ? 'Done'
+                          ? 'Add medication'
                           : 'Confirm taken')
-                      : 'OK',
+                      : (intent == VisualModeIntent.addMedication
+                          ? 'Add medication'
+                          : 'OK'),
                   showNextDose: status == VisualVerificationStatus.confirmedMatch ||
                       (status == VisualVerificationStatus.identified &&
                           nextDoseTime != '—'),
@@ -868,7 +1145,7 @@ class _ResultSheet extends StatelessWidget {
               VisualVerificationStatus.confirmedMismatch => _mismatch(),
               VisualVerificationStatus.uncertain => _uncertain(),
             },
-            // Always allow follow-up chat when not mid-ask
+            // Follow-up chat only when not mid-ask (ask is voice-first).
             if (pendingQuestion == null &&
                 status != VisualVerificationStatus.identifying) ...[
               const SizedBox(height: 10),
@@ -1152,12 +1429,16 @@ class _ResultSheet extends StatelessWidget {
 class _AskBanner extends StatelessWidget {
   const _AskBanner({
     required this.question,
+    required this.listening,
+    required this.partial,
     required this.controller,
     required this.focusNode,
     required this.onSubmit,
   });
 
   final String question;
+  final bool listening;
+  final String partial;
   final TextEditingController controller;
   final FocusNode focusNode;
   final VoidCallback onSubmit;
@@ -1193,6 +1474,46 @@ class _AskBanner extends StatelessWidget {
               color: Color(0xFF1E1B4B),
             ),
           ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: listening
+                      ? const Color(0xFF3366FF)
+                      : const Color(0xFF94A3B8),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  listening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  partial.trim().isNotEmpty
+                      ? partial
+                      : (listening
+                          ? 'Listening… speak your answer'
+                          : 'Waiting…'),
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: partial.trim().isNotEmpty
+                        ? const Color(0xFF0F172A)
+                        : const Color(0xFF64748B),
+                    fontStyle: partial.trim().isEmpty
+                        ? FontStyle.italic
+                        : FontStyle.normal,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -1203,7 +1524,7 @@ class _AskBanner extends StatelessWidget {
                   textInputAction: TextInputAction.send,
                   onSubmitted: (_) => onSubmit(),
                   decoration: InputDecoration(
-                    hintText: 'Type your answer…',
+                    hintText: 'Or type…',
                     filled: true,
                     fillColor: Colors.white,
                     contentPadding: const EdgeInsets.symmetric(
