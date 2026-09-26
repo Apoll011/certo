@@ -1,0 +1,86 @@
+import 'package:flutter/material.dart';
+
+import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
+import '../widgets/gradient_orb.dart';
+import '../widgets/pill_icon.dart';
+import '../widgets/primary_button.dart';
+import 'main_shell.dart';
+
+/// First-launch welcome / value-prop screen.
+class OnboardingScreen extends StatelessWidget {
+  const OnboardingScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      GradientOrb(
+                        size: 224,
+                        blur: 56,
+                        spread: 16,
+                        child: const Center(
+                          child: PillIcon(
+                            size: 92,
+                            color1: Colors.white,
+                            color2: Color(0xFFE6E9F7),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 44),
+                      const Text(
+                        'Your medication,\nmade simple.',
+                        textAlign: TextAlign.center,
+                        style: AppTheme.headerLarge,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Clear guidance. Easy identification.\nBuilt for everyone.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          height: 1.5,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: PrimaryButton(
+                label: 'Get started',
+                onPressed: () => Navigator.of(context).pushReplacement(
+                  MaterialPageRoute(builder: (_) => const MainShell()),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // iOS home-indicator bar
+            Container(
+              width: 134,
+              height: 5,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
