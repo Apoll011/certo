@@ -398,6 +398,54 @@ abstract class AppLocalizations {
   /// **'Snoozed for 10 minutes'**
   String get snoozed;
 
+  /// No description provided for @snoozeMinutes.
+  ///
+  /// In en, this message translates to:
+  /// **'Snooze {minutes} min'**
+  String snoozeMinutes(int minutes);
+
+  /// No description provided for @snoozedFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Snoozed for {minutes} minutes'**
+  String snoozedFor(int minutes);
+
+  /// No description provided for @takeDose.
+  ///
+  /// In en, this message translates to:
+  /// **'Take dose'**
+  String get takeDose;
+
+  /// No description provided for @alarm.
+  ///
+  /// In en, this message translates to:
+  /// **'Alarm'**
+  String get alarm;
+
+  /// No description provided for @alarmSound.
+  ///
+  /// In en, this message translates to:
+  /// **'Alarm sound'**
+  String get alarmSound;
+
+  /// No description provided for @alarmSoundDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Default alarm sound'**
+  String get alarmSoundDefault;
+
+  /// No description provided for @alarmSoundCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom sound'**
+  String get alarmSoundCustom;
+
+  /// No description provided for @alarmSoundSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Alarm sound saved'**
+  String get alarmSoundSaved;
+
   /// No description provided for @addedToday.
   ///
   /// In en, this message translates to:

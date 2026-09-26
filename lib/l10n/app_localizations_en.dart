@@ -178,6 +178,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get snoozed => 'Snoozed for 10 minutes';
 
   @override
+  String snoozeMinutes(int minutes) {
+    return 'Snooze $minutes min';
+  }
+
+  @override
+  String snoozedFor(int minutes) {
+    return 'Snoozed for $minutes minutes';
+  }
+
+  @override
+  String get takeDose => 'Take dose';
+
+  @override
+  String get alarm => 'Alarm';
+
+  @override
+  String get alarmSound => 'Alarm sound';
+
+  @override
+  String get alarmSoundDefault => 'Default alarm sound';
+
+  @override
+  String get alarmSoundCustom => 'Custom sound';
+
+  @override
+  String get alarmSoundSaved => 'Alarm sound saved';
+
+  @override
   String get addedToday => 'Added today';
 
   @override

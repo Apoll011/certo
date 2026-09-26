@@ -85,6 +85,24 @@
   "alarmSoundPlaying": "Alarm sound is playing until you respond",
   "snooze": "Snooze 10 minutes",
   "snoozed": "Snoozed for 10 minutes",
+  "snoozeMinutes": "Snooze {minutes} min",
+  "@snoozeMinutes": {
+    "placeholders": {
+      "minutes": { "type": "int" }
+    }
+  },
+  "snoozedFor": "Snoozed for {minutes} minutes",
+  "@snoozedFor": {
+    "placeholders": {
+      "minutes": { "type": "int" }
+    }
+  },
+  "takeDose": "Take dose",
+  "alarm": "Alarm",
+  "alarmSound": "Alarm sound",
+  "alarmSoundDefault": "Default alarm sound",
+  "alarmSoundCustom": "Custom sound",
+  "alarmSoundSaved": "Alarm sound saved",
 
   "addedToday": "Added today",
   "addedYesterday": "Added yesterday",

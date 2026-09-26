@@ -16,6 +16,7 @@ enum AuthStatus { loading, signedOut, signedIn }
 
 const String _kLocalePref = 'locale_override';
 const String _kNamePref = 'user_name';
+const String _kAlarmSoundPref = 'alarm_sound_uri';
 
 /// Holds the app's working state: auth session, medications, taken set, tab.
 ///
@@ -51,6 +52,10 @@ class AppState extends ChangeNotifier {
   /// Overrides the system locale; null means "follow the device".
   Locale? _localeOverride;
   Locale? get localeOverride => _localeOverride;
+
+  /// The user-selected alarm ringtone URI, or null to use the device default.
+  String? _alarmSoundUri;
+  String? get alarmSoundUri => _alarmSoundUri;
 
   SharedPreferences? _prefs;
 
@@ -109,6 +114,11 @@ class AppState extends ChangeNotifier {
     }
     final savedName = _prefs?.getString(_kNamePref);
     if (savedName != null && savedName.isNotEmpty) userName = savedName;
+    final savedAlarmSound = _prefs?.getString(_kAlarmSoundPref);
+    _alarmSoundUri = (savedAlarmSound != null && savedAlarmSound.isNotEmpty)
+        ? savedAlarmSound
+        : null;
+    AlarmService.setAlarmSoundUri(_alarmSoundUri);
 
     if (!SupabaseService.isConfigured) {
       authStatus = AuthStatus.signedOut;
@@ -252,6 +262,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Updates the alarm ringtone used for dose notifications (null = default)
+  /// and re-schedules alarms so the change takes effect immediately.
+  Future<void> setAlarmSound(String? uri) async {
+    _alarmSoundUri = (uri == null || uri.isEmpty) ? null : uri;
+    if (_alarmSoundUri == null) {
+      await _prefs?.remove(_kAlarmSoundPref);
+    } else {
+      await _prefs?.setString(_kAlarmSoundPref, _alarmSoundUri!);
+    }
+    notifyListeners();
+    try {
+      await AlarmService.applyAlarmSound(_alarmSoundUri);
+    } catch (e) {
+      debugPrint('Verifi: alarm sound update failed — $e');
+    }
+    await _syncAlarms();
+  }
+
   /// Updates the user's display name locally and, when signed in, in Supabase.
   Future<void> updateUserName(String name) async {
     final trimmed = name.trim();
@@ -349,8 +377,12 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------------------------------
 
   /// Snoozes a medication's alarm for [minutes] (default 10) and schedules a
-  /// matching one-off OS notification.
-  Future<void> snooze(String medicationId, {int minutes = 10}) async {
+  /// matching one-off OS notification. [time] is the dose's display label.
+  Future<void> snooze(
+    String medicationId, {
+    int minutes = 10,
+    String? time,
+  }) async {
     final med = medicationById(medicationId);
     if (med == null) return;
     _snoozedUntil[medicationId] = DateTime.now().add(
@@ -358,7 +390,7 @@ class AppState extends ChangeNotifier {
     );
     notifyListeners();
     try {
-      await AlarmService.snooze(med, med.times.first, minutes);
+      await AlarmService.snooze(med, time ?? med.firstTime, minutes);
     } catch (e) {
       debugPrint('Verifi: snooze schedule failed — $e');
     }

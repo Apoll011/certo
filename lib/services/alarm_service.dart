@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -10,12 +10,18 @@ import 'package:timezone/timezone.dart' as tz;
 import '../models/medication.dart';
 import '../utils/format.dart';
 import '../utils/schedule.dart';
+import 'alarm_sound_service.dart';
 
 /// Schedules OS-level alarm notifications for medication doses.
 ///
 /// Doses ring like a clock alarm even when the app is backgrounded or killed:
 /// the notification uses a full-screen intent (Android) that opens the alarm
 /// UI over the lock screen via [onOpenAlarm] / [consumeInitialPayload].
+///
+/// Scheduling falls back to inexact alarms when the exact-alarm permission is
+/// unavailable, so reminders always fire rather than failing silently. The
+/// notification sound follows the user's chosen alarm ringtone (see
+/// [AlarmSoundService]).
 class AlarmService {
   AlarmService._();
 
@@ -36,11 +42,30 @@ class AlarmService {
   static NotificationAppLaunchDetails? _launchDetails;
 
   static const String _channelId = 'medication_alarms';
-  static const String _channelName = 'Medication reminders';
+  static const String _channelName = 'Medication alarms';
   static const String _channelDescription =
       'Alerts when it is time to take a medication';
 
+  /// The device's default alarm ringtone URI, resolved once at init.
+  static String? _defaultAlarmUri;
+
+  /// The user-selected alarm ringtone URI, or null to use the device default.
+  static String? _alarmSoundUri;
+
+  /// Whether the OS can currently deliver exact alarms.
+  static bool _canScheduleExact = false;
+
   static bool get isInitialized => _initialized;
+
+  /// Whether exact alarms are available on this device.
+  static bool get canScheduleExact => _canScheduleExact;
+
+  /// Sets the alarm ringtone used by future notifications (null = default).
+  static void setAlarmSoundUri(String? uri) {
+    _alarmSoundUri = (uri == null || uri.isEmpty) ? null : uri;
+  }
+
+  static String? get alarmSoundUri => _alarmSoundUri;
 
   /// Initializes the plugin, device timezone, and permissions. Idempotent.
   static Future<void> init() async {
@@ -72,15 +97,49 @@ class AlarmService {
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
+
+    // Basic notification permission first; then try for a full-screen intent so
+    // the alarm can appear over the lock screen (Android 14+).
     await android?.requestNotificationsPermission();
-    await android?.requestExactAlarmsPermission();
     await android?.requestFullScreenIntentPermission();
+
+    // Exact alarms may be unavailable (Android 12+ permission). Remember this
+    // so scheduling can fall back to inexact alarms instead of failing.
+    try {
+      _canScheduleExact =
+          await android?.canScheduleExactNotifications() ?? false;
+    } catch (_) {
+      _canScheduleExact = false;
+    }
+
+    try {
+      _defaultAlarmUri = await AlarmSoundService.defaultAlarmUri();
+    } catch (_) {
+      _defaultAlarmUri = null;
+    }
 
     try {
       _launchDetails = await _plugin.getNotificationAppLaunchDetails();
     } catch (e) {
       debugPrint('Verifi: launch-details lookup failed — $e');
     }
+  }
+
+  /// Opens the Android "Alarms & reminders" settings so the user can grant the
+  /// exact-alarm permission, then refreshes [canScheduleExact].
+  static Future<bool> requestExactAlarmPermission() async {
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    try {
+      await android?.requestExactAlarmsPermission();
+    } catch (_) {}
+    try {
+      _canScheduleExact =
+          await android?.canScheduleExactNotifications() ?? false;
+    } catch (_) {}
+    return _canScheduleExact;
   }
 
   /// The payload the app was launched with (full-screen alarm on cold start),
@@ -119,6 +178,7 @@ class AlarmService {
     await _plugin.cancelAll();
 
     final now = DateTime.now();
+    final mode = _scheduleMode();
     var id = 0;
     for (final m in meds) {
       if (m.status != MedicationStatus.active) continue;
@@ -129,7 +189,7 @@ class AlarmService {
           body: m.dosageLine,
           scheduledDate: tz.TZDateTime.from(at, tz.local),
           notificationDetails: _details(),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: mode,
           payload: jsonEncode({'medicationId': m.id, 'time': clock12(at)}),
         );
       }
@@ -146,7 +206,7 @@ class AlarmService {
       body: m.dosageLine,
       scheduledDate: tz.TZDateTime.from(at, tz.local),
       notificationDetails: _details(),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: _scheduleMode(),
       payload: jsonEncode({'medicationId': m.id, 'time': time}),
     );
   }
@@ -157,12 +217,39 @@ class AlarmService {
     await _plugin.cancel(id: _snoozeId(medicationId));
   }
 
+  /// Recreates the notification channel so a newly chosen alarm sound takes
+  /// effect (on Android 8+ a channel's sound is fixed once created).
+  static Future<void> applyAlarmSound(String? uri) async {
+    await init();
+    setAlarmSoundUri(uri);
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    try {
+      await android?.deleteNotificationChannel(channelId: _channelId);
+    } catch (e) {
+      debugPrint('Verifi: channel recreation failed — $e');
+    }
+  }
+
   static int _snoozeId(String medicationId) {
     // Keep within the int32 notification-id range; distinct from dose ids.
     return 100000 + medicationId.hashCode.abs() % 100000;
   }
 
+  static AndroidScheduleMode _scheduleMode() => _canScheduleExact
+      ? AndroidScheduleMode.exactAllowWhileIdle
+      : AndroidScheduleMode.inexactAllowWhileIdle;
+
   static NotificationDetails _details() {
+    // Prefer the user's chosen sound, then the device default alarm, then the
+    // bundled raw resource as a final fallback.
+    final uri = _alarmSoundUri ?? _defaultAlarmUri;
+    final AndroidNotificationSound sound = (uri != null && uri.isNotEmpty)
+        ? UriAndroidNotificationSound(uri)
+        : const RawResourceAndroidNotificationSound('alarm');
+
     return NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
@@ -173,10 +260,11 @@ class AlarmService {
         category: AndroidNotificationCategory.alarm,
         fullScreenIntent: true,
         playSound: true,
-        sound: RawResourceAndroidNotificationSound('alarm'),
+        sound: sound,
         audioAttributesUsage: AudioAttributesUsage.alarm,
         enableVibration: true,
         vibrationPattern: Int64List.fromList([0, 600, 400, 600]),
+        autoCancel: false,
       ),
       iOS: DarwinNotificationDetails(
         presentAlert: true,

@@ -178,6 +178,34 @@ class AppLocalizationsPt extends AppLocalizations {
   String get snoozed => 'Adiado por 10 minutos';
 
   @override
+  String snoozeMinutes(int minutes) {
+    return 'Adiar $minutes min';
+  }
+
+  @override
+  String snoozedFor(int minutes) {
+    return 'Adiado por $minutes minutos';
+  }
+
+  @override
+  String get takeDose => 'Tomar dose';
+
+  @override
+  String get alarm => 'Alarme';
+
+  @override
+  String get alarmSound => 'Som do alarme';
+
+  @override
+  String get alarmSoundDefault => 'Som de alarme padrão';
+
+  @override
+  String get alarmSoundCustom => 'Som personalizado';
+
+  @override
+  String get alarmSoundSaved => 'Som do alarme salvo';
+
+  @override
   String get addedToday => 'Adicionado hoje';
 
   @override

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/alarm_sound_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -106,6 +107,9 @@ class SettingsScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 24),
+                  _sectionLabel(l10n.alarm),
+                  const _AlarmSoundTile(),
                   const SizedBox(height: 24),
                   _sectionLabel(l10n.notifications),
                   AppCard(
@@ -331,5 +335,97 @@ class SettingsScreen extends StatelessWidget {
           duration: const Duration(seconds: 2),
         ),
       );
+  }
+}
+
+/// Settings tile that opens the native Android alarm-sound picker and shows the
+/// currently selected ringtone.
+class _AlarmSoundTile extends StatefulWidget {
+  const _AlarmSoundTile();
+
+  @override
+  State<_AlarmSoundTile> createState() => _AlarmSoundTileState();
+}
+
+class _AlarmSoundTileState extends State<_AlarmSoundTile> {
+  String? _title;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _loadTitle();
+  }
+
+  Future<void> _loadTitle() async {
+    final uri = context.read<AppState>().alarmSoundUri;
+    if (uri == null) {
+      if (_title != null && mounted) setState(() => _title = null);
+      return;
+    }
+    final title = await AlarmSoundService.titleFor(uri);
+    if (mounted && title != null && title != _title) {
+      setState(() => _title = title);
+    }
+  }
+
+  Future<void> _pickAlarmSound() async {
+    final l10n = AppLocalizations.of(context)!;
+    final state = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    final picked = await AlarmSoundService.pick();
+    if (picked == null || !mounted) return; // cancelled
+
+    await state.setAlarmSound(picked);
+    if (!mounted) return;
+    _title = await AlarmSoundService.titleFor(picked);
+    if (mounted) setState(() {});
+
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(l10n.alarmSoundSaved),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final state = context.watch<AppState>();
+    final subtitle = state.alarmSoundUri == null
+        ? l10n.alarmSoundDefault
+        : (_title ?? l10n.alarmSoundCustom);
+
+    return AppCard(
+      onTap: _pickAlarmSound,
+      child: Row(
+        children: [
+          const Icon(
+            Icons.music_note_rounded,
+            color: AppColors.textPrimary,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.alarmSound, style: AppTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(subtitle, style: AppTheme.bodySmall),
+              ],
+            ),
+          ),
+          const Icon(
+            Icons.chevron_right_rounded,
+            color: AppColors.textSecondary,
+            size: 26,
+          ),
+        ],
+      ),
+    );
   }
 }
