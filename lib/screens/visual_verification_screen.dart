@@ -15,6 +15,7 @@ import '../models/medication.dart';
 import '../services/elevenlabs_service.dart';
 import '../state/app_state.dart';
 import '../utils/schedule.dart';
+import '../widgets/chat_ui_attachment.dart';
 import 'voice_mode_sheet.dart';
 
 export '../ai/tools/vision_tools.dart'
@@ -94,6 +95,8 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
   bool _canConfirm = false;
 
   final List<ChatMessage> _history = [];
+  /// Rich cards from show_medication / show_medications / show_dose_status.
+  final List<ChatUiAttachment> _uiAttachments = [];
   final TextEditingController _replyCtrl = TextEditingController();
   final FocusNode _replyFocus = FocusNode();
   String? _pendingQuestion;
@@ -502,6 +505,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       onSpeak: _speak,
       onAskUser: _askUser,
       onShowVisualResult: _applyCard,
+      onShowUi: _appendUiAttachment,
       onCapturePhoto: () async {
         if (!_isProcessing) await _captureAndAnalyze();
       },
@@ -509,6 +513,11 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
         if (!_isProcessing) await _captureAndAnalyze();
       },
     );
+  }
+
+  void _appendUiAttachment(ChatUiAttachment attachment) {
+    if (!mounted) return;
+    setState(() => _uiAttachments.add(attachment));
   }
 
   Future<void> _captureAndAnalyze() async {
@@ -779,6 +788,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       _askPartial = '';
       _canAdd = false;
       _awaitingAutoCapture = false;
+      _uiAttachments.clear();
     });
   }
 
@@ -923,6 +933,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
               pendingQuestion: _pendingQuestion,
               listeningForAnswer: _listeningForAnswer,
               askPartial: _askPartial,
+              uiAttachments: _uiAttachments,
               replyController: _replyCtrl,
               replyFocus: _replyFocus,
               bottomPad: bottomPad,
@@ -1040,6 +1051,7 @@ class _ResultSheet extends StatelessWidget {
     required this.pendingQuestion,
     required this.listeningForAnswer,
     required this.askPartial,
+    required this.uiAttachments,
     required this.replyController,
     required this.replyFocus,
     required this.bottomPad,
@@ -1067,6 +1079,7 @@ class _ResultSheet extends StatelessWidget {
   final String? pendingQuestion;
   final bool listeningForAnswer;
   final String askPartial;
+  final List<ChatUiAttachment> uiAttachments;
   final TextEditingController replyController;
   final FocusNode replyFocus;
   final double bottomPad;
@@ -1145,6 +1158,25 @@ class _ResultSheet extends StatelessWidget {
               VisualVerificationStatus.confirmedMismatch => _mismatch(),
               VisualVerificationStatus.uncertain => _uncertain(),
             },
+            if (uiAttachments.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              for (var i = 0; i < uiAttachments.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
+                if (uiAttachments[i].caption != null &&
+                    uiAttachments[i].caption!.trim().isNotEmpty) ...[
+                  Text(
+                    uiAttachments[i].caption!,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF334155),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                ],
+                ChatUiAttachmentView(attachment: uiAttachments[i]),
+              ],
+            ],
             // Follow-up chat only when not mid-ask (ask is voice-first).
             if (pendingQuestion == null &&
                 status != VisualVerificationStatus.identifying) ...[

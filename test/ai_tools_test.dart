@@ -315,6 +315,81 @@ void main() {
     });
   });
 
+  group('Chat UI Tools (show_medication)', () {
+    test('show_medication resolves by name and invokes onShowUi', () async {
+      ChatUiAttachment? shown;
+      final tool = ShowMedicationTool(
+        state,
+        onShowUi: (a) => shown = a,
+      );
+
+      final res = await tool.execute({
+        'name': 'Amoxicillin',
+        'badge': 'Next',
+        'highlight': '8:00 AM · After breakfast',
+        'caption': 'Here is your next dose',
+      });
+
+      expect(res.success, isTrue);
+      expect(shown, isA<MedicationCardAttachment>());
+      final card = shown! as MedicationCardAttachment;
+      expect(card.name, 'Amoxicillin');
+      expect(card.badge, 'Next');
+      expect(card.highlight, '8:00 AM · After breakfast');
+      expect(card.dosage, '500 mg');
+      expect(card.pillColorIndex, 1);
+    });
+
+    test('show_medications lists active meds when names omitted', () async {
+      ChatUiAttachment? shown;
+      final tool = ShowMedicationsTool(
+        state,
+        onShowUi: (a) => shown = a,
+      );
+
+      final res = await tool.execute({
+        'title': "Today's schedule",
+        'badge': 'Today',
+      });
+
+      expect(res.success, isTrue);
+      expect(shown, isA<MedicationListAttachment>());
+      final list = shown! as MedicationListAttachment;
+      expect(list.title, "Today's schedule");
+      expect(list.items.length, 1); // only active Amoxicillin
+      expect(list.items.first.name, 'Amoxicillin');
+    });
+
+    test('show_dose_status renders confirmation card', () async {
+      ChatUiAttachment? shown;
+      final tool = ShowDoseStatusTool(
+        state,
+        onShowUi: (a) => shown = a,
+      );
+
+      final res = await tool.execute({
+        'name': 'Amoxicillin',
+        'status_label': 'Marked as taken',
+        'tone': 'success',
+        'detail': 'Next dose at 8:00 PM',
+      });
+
+      expect(res.success, isTrue);
+      expect(shown, isA<DoseStatusAttachment>());
+      final card = shown! as DoseStatusAttachment;
+      expect(card.medicationName, 'Amoxicillin');
+      expect(card.statusLabel, 'Marked as taken');
+      expect(card.tone, 'success');
+    });
+
+    test('withAllTools registers UI tools', () {
+      final full = AiToolRegistry.withAllTools(state);
+      expect(full.getTool('show_medication'), isNotNull);
+      expect(full.getTool('show_medications'), isNotNull);
+      expect(full.getTool('show_dose_status'), isNotNull);
+    });
+  });
+
   group('Vision & Visual Mode Tools', () {
     test('StartVisualModeTool triggers visual mode with scheduled context', () async {
       VisualModeRequest? capturedRequest;

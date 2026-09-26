@@ -102,6 +102,8 @@ Voice Mode Rules (CRITICAL):
   • "add this medication" / "scan to add" → intent="add_medication"
   • "what is this" / "identify" → intent="identify"
 - Clarifying questions → ask_user (waits for a spoken answer). Do not invent times/dosage.
+- After mentioning a medication, call show_medication (badge like "Next" / "Due now") so a card appears in chat.
+- For today's list / several doses → show_medications. After taken/skip/snooze → show_dose_status.
 - After goodbye / "thanks", speak briefly then close_voice_mode.
 - Wrong intent causes false "not your medication" — never verify when the user wants to add.
 ''');
@@ -113,6 +115,7 @@ $intentNote- ALWAYS call show_visual_verification_result after inspecting an ima
 - ask_user collects a SPOKEN answer — keep questions short; do not invent times.
 - For add_medication: after you have name + dosage + ≥1 time, you MUST call create_medication
   before saying it was added. Never claim success without create_medication.
+- When the package matches a listed med, also call show_medication so the chat shows its card.
 - speak_to_user: short confirmations only (no "opening camera" / process narration).
 - capture_photo only if the frame is unreadable.
 - Intent behavior:
@@ -135,19 +138,22 @@ Tools:
 Schedule: get_next_medications, get_today_schedule, list_medications, get_medication_details, get_user_summary
 Doses: mark_medication_taken, skip_medication, snooze_medication, get_last_dose, get_dose_history, read_instructions
 CRUD: create_medication (name, dosage, ≥1 time), update_medication, delete_medication
+Chat UI: show_medication (card in bubble), show_medications (list of cards), show_dose_status (taken/skip/snooze confirm)
 Session: speak_to_user/speak, ask_user, close_voice_mode
 Vision: start_visual_mode (intent + auto_capture + prompt), show_visual_verification_result, capture_photo
 
 ${modeRules.toString()}
 Guidelines:
-1. Schedule → get_next_medications / get_today_schedule first.
-2. Instructions → read_instructions; speak stored text as-is.
-3. History → get_last_dose / get_dose_history.
-4. Verify / check package → start_visual_mode(intent=verify, auto_capture=true) then close_voice_mode — no prior speak.
-5. Add from package → start_visual_mode(intent=add_medication, auto_capture=true) then close_voice_mode — no prior speak.
-6. "What is this?" → start_visual_mode(intent=identify, auto_capture=true) then close_voice_mode — no prior speak.
-7. Goodbye → speak + close_voice_mode.
-8. Tone: calm, brief, reassuring. No process commentary.
+1. Schedule / next dose → get_next_medications then show_medication (badge "Next") + short speak.
+2. Today's plan → get_today_schedule then show_medications.
+3. Instructions → read_instructions; speak stored text as-is.
+4. History → get_last_dose / get_dose_history.
+5. Verify / check package → start_visual_mode(intent=verify, auto_capture=true) then close_voice_mode — no prior speak.
+6. Add from package → start_visual_mode(intent=add_medication, auto_capture=true) then close_voice_mode — no prior speak.
+7. "What is this?" → start_visual_mode(intent=identify, auto_capture=true) then close_voice_mode — no prior speak.
+8. After mark/skip/snooze → show_dose_status + brief speak.
+9. Goodbye → speak + close_voice_mode.
+10. Tone: calm, brief, reassuring. No process commentary.
 '''.trim();
   }
 

@@ -12,6 +12,7 @@ import '../ai/ai.dart';
 import '../config/app_config.dart';
 import '../services/elevenlabs_service.dart';
 import '../state/app_state.dart';
+import '../widgets/chat_ui_attachment.dart';
 import 'visual_verification_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -38,9 +39,25 @@ enum VoiceModeIntent { general, addMedication }
 enum _VoicePhase { listening, thinking, speaking, idle }
 
 class _ChatBubble {
-  const _ChatBubble({required this.isUser, required this.text});
+  const _ChatBubble({
+    required this.isUser,
+    required this.text,
+    this.attachments = const [],
+  });
   final bool isUser;
   final String text;
+  final List<ChatUiAttachment> attachments;
+
+  _ChatBubble copyWith({
+    String? text,
+    List<ChatUiAttachment>? attachments,
+  }) {
+    return _ChatBubble(
+      isUser: isUser,
+      text: text ?? this.text,
+      attachments: attachments ?? this.attachments,
+    );
+  }
 }
 
 /// Opens Voice Mode as a full-page route.
@@ -517,6 +534,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
             Navigator.of(context).pop();
           }
         },
+        onShowUi: _appendUiAttachment,
       );
 
       final result = await assistant.sendMessage(
@@ -650,7 +668,18 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (trimmed.isEmpty || !mounted || _userInterrupted) return;
 
     setState(() {
-      _bubbles.add(_ChatBubble(isUser: false, text: trimmed));
+      // Merge into the latest AI bubble so show_medication cards stay on the
+      // same message as the spoken reply.
+      if (_bubbles.isNotEmpty && !_bubbles.last.isUser) {
+        final last = _bubbles.last;
+        final existing = last.text.trim();
+        final merged = existing.isEmpty
+            ? trimmed
+            : (existing == trimmed ? existing : '$existing\n$trimmed');
+        _bubbles[_bubbles.length - 1] = last.copyWith(text: merged);
+      } else {
+        _bubbles.add(_ChatBubble(isUser: false, text: trimmed));
+      }
       _phase = _VoicePhase.speaking;
       _errorText = null;
     });
@@ -751,6 +780,35 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         curve: Curves.easeOut,
       );
     });
+  }
+
+  /// Attach a rich card to the latest AI bubble, or open a new one.
+  void _appendUiAttachment(ChatUiAttachment attachment) {
+    if (!mounted) return;
+    setState(() {
+      if (_bubbles.isNotEmpty && !_bubbles.last.isUser) {
+        final last = _bubbles.last;
+        final caption = attachment.caption?.trim();
+        final mergedText = (last.text.trim().isEmpty &&
+                caption != null &&
+                caption.isNotEmpty)
+            ? caption
+            : last.text;
+        _bubbles[_bubbles.length - 1] = last.copyWith(
+          text: mergedText,
+          attachments: [...last.attachments, attachment],
+        );
+      } else {
+        _bubbles.add(
+          _ChatBubble(
+            isUser: false,
+            text: attachment.caption?.trim() ?? '',
+            attachments: [attachment],
+          ),
+        );
+      }
+    });
+    _scrollChatToEnd();
   }
 
   void _onOrbTap() {
@@ -928,12 +986,14 @@ class _ChatRow extends StatelessWidget {
         bubble.isUser ? Alignment.centerRight : Alignment.centerLeft;
     final color = bubble.isUser ? _VC.userBubble : _VC.aiBubble;
     final label = bubble.isUser ? 'You' : 'Certo';
+    final hasText = bubble.text.trim().isNotEmpty;
+    final hasCards = bubble.attachments.isNotEmpty;
 
     return Align(
       alignment: align,
       child: Container(
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.82,
+          maxWidth: MediaQuery.of(context).size.width * 0.88,
         ),
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -962,15 +1022,24 @@ class _ChatRow extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              bubble.text,
-              style: const TextStyle(
-                color: _VC.textPrimary,
-                fontSize: 15,
-                height: 1.35,
+            if (hasText) ...[
+              const SizedBox(height: 4),
+              Text(
+                bubble.text,
+                style: const TextStyle(
+                  color: _VC.textPrimary,
+                  fontSize: 15,
+                  height: 1.35,
+                ),
               ),
-            ),
+            ],
+            if (hasCards) ...[
+              SizedBox(height: hasText ? 10 : 6),
+              for (var i = 0; i < bubble.attachments.length; i++) ...[
+                if (i > 0) const SizedBox(height: 8),
+                ChatUiAttachmentView(attachment: bubble.attachments[i]),
+              ],
+            ],
           ],
         ),
       ),

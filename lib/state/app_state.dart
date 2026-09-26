@@ -89,6 +89,7 @@ class AppState extends ChangeNotifier {
     Future<String> Function(String question)? onAskUser,
     Future<void> Function()? onCloseVoiceMode,
     Future<void> Function()? onCapturePhoto,
+    void Function(ChatUiAttachment attachment)? onShowUi,
   }) {
     final registry = AiToolRegistry.withAllTools(
       this,
@@ -98,6 +99,7 @@ class AppState extends ChangeNotifier {
       onAskUser: onAskUser,
       onCloseVoiceMode: onCloseVoiceMode,
       onCapturePhoto: onCapturePhoto,
+      onShowUi: onShowUi,
     );
     final client = OpenAiCompatibleClient(
       apiKey: apiKey ?? AppConfig.aiApiKey,

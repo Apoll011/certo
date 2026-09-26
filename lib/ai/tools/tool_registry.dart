@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import '../../state/app_state.dart';
 import 'ai_tool.dart';
 import 'medication_tools.dart';
+import 'ui_tools.dart';
 import 'vision_tools.dart';
 import 'voice_tools.dart';
 
@@ -38,7 +39,7 @@ class AiToolRegistry {
     return registry;
   }
 
-  /// Creates a complete registry with medication, voice, and visual tools.
+  /// Creates a complete registry with medication, voice, visual, and UI tools.
   factory AiToolRegistry.withAllTools(
     AppState state, {
     DateTime Function()? clock,
@@ -48,6 +49,7 @@ class AiToolRegistry {
     Future<String> Function(String question)? onAskUser,
     Future<void> Function()? onCloseVoiceMode,
     Future<void> Function()? onCapturePhoto,
+    void Function(ChatUiAttachment attachment)? onShowUi,
   }) {
     final registry = AiToolRegistry.withMedicationTools(state, clock: clock);
     registry.registerVoiceTools(onSpeak: onSpeak);
@@ -58,6 +60,7 @@ class AiToolRegistry {
       onCloseVoiceMode: onCloseVoiceMode,
       onCapturePhoto: onCapturePhoto,
     );
+    registry.registerUiTools(state, onShowUi: onShowUi);
     return registry;
   }
 
@@ -80,6 +83,16 @@ class AiToolRegistry {
     register(AskUserTool(onAskUser: onAskUser));
     register(CloseVoiceModeTool(onClose: onCloseVoiceMode));
     register(CapturePhotoTool(onCapture: onCapturePhoto));
+  }
+
+  /// Registers rich chat UI tools (medication cards, lists, dose status).
+  void registerUiTools(
+    AppState state, {
+    void Function(ChatUiAttachment attachment)? onShowUi,
+  }) {
+    register(ShowMedicationTool(state, onShowUi: onShowUi));
+    register(ShowMedicationsTool(state, onShowUi: onShowUi));
+    register(ShowDoseStatusTool(state, onShowUi: onShowUi));
   }
 
   void register(AiTool tool) {
