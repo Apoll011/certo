@@ -22,15 +22,19 @@ class AppConfig {
     'ELEVENLABS_API_KEY',
   );
 
-  /// Voice ID for TTS. Defaults to "Rachel" (a natural, warm voice).
+  /// Voice ID for TTS. Defaults to "Rachel" (21m00Tcm4TlvDq8ikWAM) - ElevenLabs' premier natural English voice.
   /// Override via --dart-define=ELEVENLABS_VOICE_ID=...
   static const String elevenLabsVoiceId = String.fromEnvironment(
     'ELEVENLABS_VOICE_ID',
-    defaultValue: 'wWWn96OtTHu1sn8SRGEr', // Jessica — conversational
+    defaultValue: '21m00Tcm4TlvDq8ikWAM', // Rachel — premier natural English voice
   );
 
-  /// ElevenLabs TTS model: "eleven_v3" = Conversacional v3.
-  static const String elevenLabsTtsModel = 'eleven_v3';
+  /// ElevenLabs TTS model: "eleven_flash_v2_5" (~75ms latency for conversational voice)
+  /// Override via --dart-define=ELEVENLABS_TTS_MODEL=...
+  static const String elevenLabsTtsModel = String.fromEnvironment(
+    'ELEVENLABS_TTS_MODEL',
+    defaultValue: 'eleven_flash_v2_5',
+  );
 
   /// ElevenLabs STT model: Scribe v2 Realtime.
   static const String elevenLabsSttModel = 'scribe_v2_realtime';

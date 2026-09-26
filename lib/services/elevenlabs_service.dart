@@ -248,50 +248,62 @@ class ElevenLabsService {
 
   // ── TTS ────────────────────────────────────────────────────────────────────
 
-  /// Converts [text] to speech using eleven_v3 (Conversacional) and emits
+  /// Converts [text] to speech using ElevenLabs TTS and emits
   /// [TtsAudioChunk] events with streaming MP3 bytes, followed by [TtsDone].
   Future<void> speak(String text) async {
     final apiKey = AppConfig.elevenLabsApiKey;
     if (apiKey.isEmpty) {
-      _emit(VoiceError('ElevenLabs API key missing'));
+      _emit(VoiceError('ElevenLabs API key is missing. Set ELEVENLABS_API_KEY with --dart-define.'));
       return;
     }
 
     final voiceId = AppConfig.elevenLabsVoiceId;
-    final url = Uri.parse('$_ttsEndpoint/$voiceId/stream');
+    final primaryModel = AppConfig.elevenLabsTtsModel;
 
-    // First try with eleven_v3
-    var modelId = AppConfig.elevenLabsTtsModel;
-    bool success = await _fetchTtsStream(url, apiKey, text, modelId);
+    // Prioritize configured model, then fallback to other reliable models
+    final modelsToTry = <String>[
+      primaryModel,
+      if (primaryModel != 'eleven_flash_v2_5') 'eleven_flash_v2_5',
+      if (primaryModel != 'eleven_multilingual_v2') 'eleven_multilingual_v2',
+      if (primaryModel != 'eleven_v3') 'eleven_v3',
+    ];
 
-    // If eleven_v3 is not available on this tier, gracefully fall back to eleven_multilingual_v2
-    if (!success && modelId == 'eleven_v3') {
-      debugPrint('ElevenLabs TTS: eleven_v3 failed, falling back to eleven_multilingual_v2...');
-      modelId = 'eleven_multilingual_v2';
-      success = await _fetchTtsStream(url, apiKey, text, modelId);
+    String? lastError;
+
+    for (final modelId in modelsToTry) {
+      debugPrint('ElevenLabs TTS: trying model $modelId with voice $voiceId...');
+      final (success, errorMsg) = await _fetchTtsStream(
+        voiceId: voiceId,
+        apiKey: apiKey,
+        text: text,
+        modelId: modelId,
+      );
+
+      if (success) {
+        return;
+      }
+      lastError = errorMsg;
+      debugPrint('ElevenLabs TTS: model $modelId failed ($lastError), trying fallback...');
     }
 
-    if (!success) {
-      _emit(VoiceError('TTS synthesis failed'));
-    }
+    _emit(VoiceError(lastError ?? 'TTS synthesis failed. Check your API key and voice ID.'));
   }
 
-  Future<bool> _fetchTtsStream(
-    Uri url,
-    String apiKey,
-    String text,
-    String modelId,
-  ) async {
+  Future<(bool, String?)> _fetchTtsStream({
+    required String voiceId,
+    required String apiKey,
+    required String text,
+    required String modelId,
+  }) async {
+    final url = Uri.parse('$_ttsEndpoint/$voiceId/stream?output_format=mp3_44100_128');
+
     final body = jsonEncode({
       'text': text,
       'model_id': modelId,
       'voice_settings': {
         'stability': 0.5,
         'similarity_boost': 0.75,
-        'style': 0.3,
-        'use_speaker_boost': true,
       },
-      'output_format': 'mp3_44100_128',
     });
 
     try {
@@ -301,13 +313,12 @@ class ElevenLabsService {
         ..headers['Accept'] = 'audio/mpeg'
         ..body = body;
 
-      debugPrint('ElevenLabs TTS: requesting speech with model $modelId...');
       final response = await request.send();
 
       if (response.statusCode != 200) {
         final bodyStr = await response.stream.bytesToString();
-        debugPrint('ElevenLabs TTS error ${response.statusCode}: $bodyStr');
-        return false;
+        debugPrint('ElevenLabs TTS error ${response.statusCode} ($modelId): $bodyStr');
+        return (false, 'TTS error (${response.statusCode}): $bodyStr');
       }
 
       await for (final chunk in response.stream) {
@@ -315,11 +326,11 @@ class ElevenLabsService {
       }
 
       _emit(TtsDone());
-      debugPrint('ElevenLabs TTS: streaming finished successfully');
-      return true;
+      debugPrint('ElevenLabs TTS: streaming finished successfully with $modelId');
+      return (true, null);
     } catch (e) {
-      debugPrint('ElevenLabs TTS exception: $e');
-      return false;
+      debugPrint('ElevenLabs TTS exception ($modelId): $e');
+      return (false, 'TTS connection error: $e');
     }
   }
 

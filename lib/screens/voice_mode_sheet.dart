@@ -1,9 +1,10 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' show Directory, File;
 import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../services/elevenlabs_service.dart';
@@ -22,28 +23,8 @@ class _VC {
   static const waveIdle = Color(0xFF2A3E66);
   static const textPrimary = Colors.white;
   static const textSub = Color(0xFF7B9CC5);
-  static const textHint = Color(0xFF4A6A9A);
   static const divider = Color(0xFF243350);
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Random AI phrases to speak after transcribing
-// ─────────────────────────────────────────────────────────────────────────────
-const _randomPhrases = [
-  "Got it! I'll keep that in mind for your next dose.",
-  "Interesting — your medication routine sounds well-organised!",
-  "No worries, I'm here whenever you need a reminder.",
-  "That's great to hear! Staying consistent with meds really matters.",
-  "Sounds good! Let me know if there's anything I can help you with.",
-  "I heard you loud and clear. You're doing great!",
-  "Consider it noted. Taking care of your health is the best investment.",
-  "Absolutely! I'm always here to help you stay on track.",
-  "Perfect timing! Remember, your next dose is coming up soon.",
-  "Thanks for checking in — you're on top of things!",
-];
-
-String _randomPhrase() =>
-    _randomPhrases[Random().nextInt(_randomPhrases.length)];
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Voice session phase
@@ -51,29 +32,28 @@ String _randomPhrase() =>
 enum _VoicePhase { listening, thinking, speaking, idle }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Entry-point
+//  Entry-point: Opens Voice Mode as a full-page route
 // ─────────────────────────────────────────────────────────────────────────────
 Future<void> showVoiceMode(BuildContext context) {
-  return showModalBottomSheet(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    useSafeArea: false,
-    builder: (_) => const _VoiceModeSheet(),
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => const VoiceModeScreen(),
+      fullscreenDialog: true,
+    ),
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Sheet root
+//  Full-page Voice Mode Screen
 // ─────────────────────────────────────────────────────────────────────────────
-class _VoiceModeSheet extends StatefulWidget {
-  const _VoiceModeSheet();
+class VoiceModeScreen extends StatefulWidget {
+  const VoiceModeScreen({super.key});
 
   @override
-  State<_VoiceModeSheet> createState() => _VoiceModeSheetState();
+  State<VoiceModeScreen> createState() => _VoiceModeScreenState();
 }
 
-class _VoiceModeSheetState extends State<_VoiceModeSheet>
+class _VoiceModeScreenState extends State<VoiceModeScreen>
     with TickerProviderStateMixin {
   // ── services ────────────────────────────────────────────────────────────
   late final ElevenLabsService _svc;
@@ -97,7 +77,7 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
 
   // ── waveform bars animation ───────────────────────────────────────────────
   late final AnimationController _waveCtrl;
-  static const int _barCount = 11;
+  static const int _barCount = 13;
   late final List<Animation<double>> _barAnims;
 
   // ── orb morph animation (idle shape shift) ───────────────────────────────
@@ -118,10 +98,10 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
       duration: const Duration(milliseconds: 3200),
     )..repeat(reverse: true);
 
-    _orbScale = Tween<double>(begin: 0.96, end: 1.04).animate(
+    _orbScale = Tween<double>(begin: 0.95, end: 1.05).animate(
       CurvedAnimation(parent: _orbCtrl, curve: Curves.easeInOut),
     );
-    _orbFloat = Tween<double>(begin: -6, end: 6).animate(
+    _orbFloat = Tween<double>(begin: -7, end: 7).animate(
       CurvedAnimation(parent: _orbCtrl, curve: Curves.easeInOut),
     );
 
@@ -132,10 +112,10 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
     )..repeat(reverse: true);
     _morphAnim = CurvedAnimation(parent: _morphCtrl, curve: Curves.easeInOut);
 
-    // Waveform bars — each bar has its own looping phase offset
+    // Waveform bars
     _waveCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
+      duration: const Duration(milliseconds: 850),
     )..repeat(reverse: true);
 
     final rand = Random(42);
@@ -163,9 +143,10 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
     _playerCompleteSub = _player.onPlayerComplete.listen((_) {
       if (mounted) {
         setState(() => _phase = _VoicePhase.idle);
+        _waveCtrl.stop();
       }
     });
-    _svc.startListening();
+    _startListening();
   }
 
   @override
@@ -200,10 +181,10 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
           _partialText = '';
           _errorText = null;
         });
-        // Give 1.8 seconds of silence after speech before automatically replying
+        // 1.8s of silence after speech commits before speaking back
         _silenceTimer = Timer(const Duration(milliseconds: 1800), () {
           if (mounted && _phase == _VoicePhase.listening) {
-            _finishListening();
+            _finishListeningAndSpeak();
           }
         });
 
@@ -215,215 +196,498 @@ class _VoiceModeSheetState extends State<_VoiceModeSheet>
 
       case VoiceError(:final message):
         debugPrint('VoiceMode UI error: $message');
-        setState(() {
-          _errorText = message;
-        });
+        if (mounted) {
+          setState(() {
+            _phase = _VoicePhase.idle;
+            _errorText = message;
+          });
+          _waveCtrl.stop();
+        }
     }
   }
 
-  Future<void> _finishListening() async {
+  Future<void> _startListening() async {
+    try {
+      await _player.stop();
+    } catch (_) {}
+    _silenceTimer?.cancel();
+    _audioBuffer.clear();
+
+    if (mounted) {
+      setState(() {
+        _phase = _VoicePhase.listening;
+        _finalText = '';
+        _partialText = '';
+        _aiResponse = '';
+        _errorText = null;
+      });
+      _waveCtrl.repeat(reverse: true);
+    }
+    await _svc.startListening();
+  }
+
+  Future<void> _finishListeningAndSpeak() async {
     if (_phase != _VoicePhase.listening) return;
     _silenceTimer?.cancel();
     setState(() => _phase = _VoicePhase.thinking);
     _waveCtrl.stop();
+
     await _svc.stopListening();
 
-    final phrase = _randomPhrase();
-    setState(() => _aiResponse = phrase);
-    await _svc.speak(phrase);
+    final spoken = _finalText.trim().isNotEmpty
+        ? _finalText.trim()
+        : _partialText.trim();
+
+    if (spoken.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _phase = _VoicePhase.idle;
+          _errorText = 'No speech detected. Tap the orb to try speaking again.';
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _aiResponse = spoken;
+      });
+    }
+
+    // Speak back what was transcribed
+    await _svc.speak(spoken);
   }
 
   Future<void> _playBufferedAudio() async {
     if (_audioBuffer.isEmpty) {
       debugPrint('VoiceMode: audio buffer is empty');
-      setState(() => _phase = _VoicePhase.idle);
+      if (mounted) {
+        setState(() => _phase = _VoicePhase.idle);
+      }
       return;
     }
 
-    setState(() => _phase = _VoicePhase.speaking);
+    if (mounted) {
+      setState(() => _phase = _VoicePhase.speaking);
+      _waveCtrl.repeat(reverse: true);
+    }
     final bytes = Uint8List.fromList(_audioBuffer);
     _audioBuffer.clear();
 
     try {
-      final tempFile = File(
-        '${Directory.systemTemp.path}/eleven_tts_${DateTime.now().millisecondsSinceEpoch}.mp3',
-      );
-      await tempFile.writeAsBytes(bytes, flush: true);
-      debugPrint('VoiceMode: playing via DeviceFileSource (${tempFile.path})');
-      await _player.play(DeviceFileSource(tempFile.path));
-    } catch (e) {
-      debugPrint('VoiceMode: DeviceFileSource failed ($e), falling back to BytesSource');
-      try {
+      if (kIsWeb) {
         await _player.play(BytesSource(bytes));
-      } catch (err) {
-        debugPrint('VoiceMode: BytesSource error: $err');
-        if (mounted) setState(() => _phase = _VoicePhase.idle);
+      } else {
+        try {
+          final tempFile = File(
+            '${Directory.systemTemp.path}/eleven_tts_${DateTime.now().millisecondsSinceEpoch}.mp3',
+          );
+          await tempFile.writeAsBytes(bytes, flush: true);
+          debugPrint('VoiceMode: playing via DeviceFileSource (${tempFile.path})');
+          await _player.play(DeviceFileSource(tempFile.path));
+        } catch (fileErr) {
+          debugPrint('VoiceMode: File play failed ($fileErr), trying BytesSource');
+          await _player.play(BytesSource(bytes));
+        }
       }
+    } catch (e) {
+      debugPrint('VoiceMode: Audio playback error: $e');
+      if (mounted) {
+        setState(() {
+          _phase = _VoicePhase.idle;
+          _errorText = 'Playback error: $e';
+        });
+        _waveCtrl.stop();
+      }
+    }
+  }
+
+  Future<void> _stopSpeaking() async {
+    try {
+      await _player.stop();
+    } catch (_) {}
+    if (mounted) {
+      setState(() => _phase = _VoicePhase.idle);
+      _waveCtrl.stop();
+    }
+  }
+
+  void _onOrbTap() {
+    switch (_phase) {
+      case _VoicePhase.listening:
+        _finishListeningAndSpeak();
+      case _VoicePhase.speaking:
+        _stopSpeaking();
+      case _VoicePhase.thinking:
+        break;
+      case _VoicePhase.idle:
+        _startListening();
     }
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────
   String get _displayTranscript {
     if (_finalText.isNotEmpty && _partialText.isNotEmpty) {
-      return '"$_finalText $_partialText"';
+      return '$_finalText $_partialText';
     }
-    if (_finalText.isNotEmpty) return '"$_finalText"';
-    if (_partialText.isNotEmpty) return '"$_partialText"';
+    if (_finalText.isNotEmpty) return _finalText;
+    if (_partialText.isNotEmpty) return _partialText;
     return '';
   }
 
   String get _phaseLabel {
-    if (_errorText != null) return 'Something went wrong';
+    if (_errorText != null) return 'Ready to listen';
     return switch (_phase) {
       _VoicePhase.listening => 'Listening...',
-      _VoicePhase.thinking => 'Thinking...',
-      _VoicePhase.speaking => 'Speaking...',
-      _VoicePhase.idle => 'Done',
+      _VoicePhase.thinking => 'Processing speech...',
+      _VoicePhase.speaking => 'Speaking back...',
+      _VoicePhase.idle => 'Tap orb to speak',
+    };
+  }
+
+  Color get _phaseBadgeColor {
+    return switch (_phase) {
+      _VoicePhase.listening => const Color(0xFF4C7CF4),
+      _VoicePhase.thinking => const Color(0xFFEAA034),
+      _VoicePhase.speaking => const Color(0xFF2EC4B6),
+      _VoicePhase.idle => const Color(0xFF7B9CC5),
+    };
+  }
+
+  String get _phaseBadgeText {
+    return switch (_phase) {
+      _VoicePhase.listening => 'LIVE MIC',
+      _VoicePhase.thinking => 'THINKING',
+      _VoicePhase.speaking => 'SPEAKING BACK',
+      _VoicePhase.idle => 'STANDBY',
     };
   }
 
   // ── build ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: _VC.bg,
-      child: SafeArea(
+    final isStreamingActive =
+        _phase == _VoicePhase.listening || _phase == _VoicePhase.speaking;
+
+    return Scaffold(
+      backgroundColor: _VC.bg,
+      body: SafeArea(
         child: Column(
           children: [
-            // ── top bar ────────────────────────────────────────────────────
+            // ── Top header bar ───────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               child: Row(
                 children: [
                   _IconBtn(
-                    icon: Icons.close,
+                    icon: Icons.arrow_back_ios_new_rounded,
+                    tooltip: 'Back',
                     onTap: () => Navigator.of(context).pop(),
                   ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Voice Assistant',
+                    style: TextStyle(
+                      color: _VC.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
                   const Spacer(),
-                  _IconBtn(icon: Icons.settings_outlined, onTap: () {}),
+                  // Status pill
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _phaseBadgeColor.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: _phaseBadgeColor.withValues(alpha: 0.4),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _phaseBadgeColor,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _phaseBadgeText,
+                          style: TextStyle(
+                            color: _phaseBadgeColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
 
-            const Spacer(flex: 2),
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 24),
 
-            // ── orb (tap to commit speech / reply) ─────────────────────────
-            GestureDetector(
-              onTap: () {
-                if (_phase == _VoicePhase.listening) {
-                  _finishListening();
-                }
-              },
-              child: AnimatedBuilder(
-                animation: Listenable.merge([_orbCtrl, _morphCtrl]),
-                builder: (context, child) => Transform.translate(
-                  offset: Offset(0, _orbFloat.value),
-                  child: Transform.scale(
-                    scale: _orbScale.value,
-                    child: _GlassOrb(morphT: _morphAnim.value),
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 36),
-
-            // ── phase label ────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 40),
-              child: Text(
-                _phaseLabel,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _errorText != null ? const Color(0xFFFF6B6B) : _VC.textPrimary,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            // ── transcript / AI speech / error display ───────────────────────
-            if (_errorText != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF3B1520),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF8B263E)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline, color: Color(0xFFFF6B6B), size: 20),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _errorText!,
-                          style: const TextStyle(
-                            color: Color(0xFFFFD1D1),
-                            fontSize: 13,
-                            height: 1.3,
+                    // ── Glass Orb (interactive) ───────────────────────────
+                    GestureDetector(
+                      onTap: _onOrbTap,
+                      child: AnimatedBuilder(
+                        animation: Listenable.merge([_orbCtrl, _morphCtrl]),
+                        builder: (context, child) => Transform.translate(
+                          offset: Offset(0, _orbFloat.value),
+                          child: Transform.scale(
+                            scale: _orbScale.value,
+                            child: _GlassOrb(morphT: _morphAnim.value),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              )
-            else if (_phase == _VoicePhase.speaking && _aiResponse.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                child: Text(
-                  '"$_aiResponse"',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: _VC.orbHighlight,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    height: 1.5,
-                  ),
-                ),
-              )
-            else if (_displayTranscript.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                child: Text(
-                  _displayTranscript,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: _VC.textSub,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                    height: 1.5,
-                  ),
-                ),
-              ),
+                    ),
 
-            const SizedBox(height: 28),
+                    const SizedBox(height: 30),
 
-            // ── waveform ───────────────────────────────────────────────────
-            GestureDetector(
-              onTap: () {
-                if (_phase == _VoicePhase.listening) {
-                  _finishListening();
-                }
-              },
-              child: _WaveformBars(
-                anims: _barAnims,
-                active: _phase == _VoicePhase.listening,
+                    // ── Phase label ───────────────────────────────────────
+                    Text(
+                      _phaseLabel,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: _VC.textPrimary,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+
+                    const SizedBox(height: 6),
+
+                    // Subtitle guidance
+                    Text(
+                      _phase == _VoicePhase.listening
+                          ? 'Speak naturally or tap the orb when done'
+                          : _phase == _VoicePhase.speaking
+                              ? 'ElevenLabs TTS echoing your speech'
+                              : _phase == _VoicePhase.thinking
+                                  ? 'Synthesizing voice response...'
+                                  : 'Tap orb or the button below to start',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: _VC.textSub,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // ── Waveform bars ─────────────────────────────────────
+                    GestureDetector(
+                      onTap: _onOrbTap,
+                      child: _WaveformBars(
+                        anims: _barAnims,
+                        active: isStreamingActive,
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // ── Speech Transcription / Echo Box ───────────────────
+                    if (_errorText != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3B1520),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFF8B263E)),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.error_outline_rounded,
+                              color: Color(0xFFFF6B6B),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                _errorText!,
+                                style: const TextStyle(
+                                  color: Color(0xFFFFD1D1),
+                                  fontSize: 13,
+                                  height: 1.4,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (_phase == _VoicePhase.speaking && _aiResponse.isNotEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _VC.bgCard,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: _VC.orbPurple.withValues(alpha: 0.4),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Row(
+                              children: [
+                                Icon(
+                                  Icons.volume_up_rounded,
+                                  color: _VC.orbPurple,
+                                  size: 16,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Speaking back what you said:',
+                                  style: TextStyle(
+                                    color: _VC.orbPurple,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '"$_aiResponse"',
+                              style: const TextStyle(
+                                color: _VC.textPrimary,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (_displayTranscript.isNotEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _VC.bgCard,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: _VC.divider),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  _phase == _VoicePhase.listening
+                                      ? Icons.mic_rounded
+                                      : Icons.chat_bubble_outline_rounded,
+                                  color: _VC.waveActive,
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _phase == _VoicePhase.listening
+                                      ? 'Live Transcription:'
+                                      : 'You said:',
+                                  style: const TextStyle(
+                                    color: _VC.textSub,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '"$_displayTranscript"',
+                              style: const TextStyle(
+                                color: _VC.textPrimary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w400,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    const SizedBox(height: 24),
+
+                    // ── Bottom Action Button ──────────────────────────────
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _phase == _VoicePhase.listening
+                              ? const Color(0xFF2A3E66)
+                              : _phase == _VoicePhase.speaking
+                                  ? const Color(0xFF6E2837)
+                                  : _VC.waveActive,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        onPressed: _onOrbTap,
+                        icon: Icon(
+                          _phase == _VoicePhase.listening
+                              ? Icons.stop_rounded
+                              : _phase == _VoicePhase.speaking
+                                  ? Icons.volume_off_rounded
+                                  : Icons.mic_rounded,
+                          size: 20,
+                        ),
+                        label: Text(
+                          _phase == _VoicePhase.listening
+                              ? 'Finish Speaking'
+                              : _phase == _VoicePhase.speaking
+                                  ? 'Stop Audio'
+                                  : 'Tap to Speak',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // ── Suggestions card ──────────────────────────────────
+                    const _SuggestionsCard(),
+
+                    const SizedBox(height: 32),
+                  ],
+                ),
               ),
             ),
-
-            const Spacer(flex: 3),
-
-            // ── suggestions card ───────────────────────────────────────────
-            const _SuggestionsCard(),
-
-            const SizedBox(height: 24),
           ],
         ),
       ),
@@ -465,11 +729,11 @@ class _OrbPainter extends CustomPainter {
 
     // Outer glow
     final glowPaint = Paint()
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 32)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 34)
       ..shader = RadialGradient(
         colors: [
           _VC.orbPurple.withValues(alpha: 0.55),
-          _VC.orbBlue.withValues(alpha: 0.15),
+          _VC.orbBlue.withValues(alpha: 0.18),
           Colors.transparent,
         ],
         stops: const [0.0, 0.6, 1.0],
@@ -607,10 +871,10 @@ class _WaveformBars extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const _suggestions = [
-  'Scan this medication',
-  'Read the instructions',
-  'Mark it as taken',
-  'When do I take Amoxicillin?',
+  'I took my morning medication',
+  'When is my next dose of Amoxicillin?',
+  'Remind me to take Vitamin D at 8 PM',
+  'What medications do I have today?',
 ];
 
 class _SuggestionsCard extends StatelessWidget {
@@ -618,96 +882,105 @@ class _SuggestionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Container(
-        decoration: BoxDecoration(
-          color: _VC.bgCard,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _VC.divider, width: 1),
-        ),
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(
-                  Icons.help_outline_rounded,
-                  color: _VC.textSub,
-                  size: 16,
+    return Container(
+      decoration: BoxDecoration(
+        color: _VC.bgCard,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _VC.divider, width: 1),
+      ),
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.lightbulb_outline_rounded,
+                color: _VC.orbHighlight,
+                size: 18,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Try saying:',
+                style: TextStyle(
+                  color: _VC.textPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
                 ),
-                SizedBox(width: 8),
-                Text(
-                  'You can also say:',
-                  style: TextStyle(
-                    color: _VC.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            ..._suggestions.map(
-              (s) => Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(top: 7),
-                      width: 4,
-                      height: 4,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _VC.textHint,
-                      ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ..._suggestions.map(
+            (s) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 7),
+                    width: 5,
+                    height: 5,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _VC.waveActive,
                     ),
-                    const SizedBox(width: 10),
-                    Text(
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
                       s,
                       style: const TextStyle(
                         color: _VC.textSub,
-                        fontSize: 14,
-                        height: 1.5,
+                        fontSize: 13,
+                        height: 1.4,
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Small icon button (top-bar close / settings)
+//  Small icon button (top bar back / action)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _IconBtn extends StatelessWidget {
-  const _IconBtn({required this.icon, required this.onTap});
+  const _IconBtn({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
 
   final IconData icon;
   final VoidCallback onTap;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final btn = GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 38,
-        height: 38,
+        width: 40,
+        height: 40,
         decoration: BoxDecoration(
           color: _VC.bgCard,
           shape: BoxShape.circle,
           border: Border.all(color: _VC.divider),
         ),
-        child: Icon(icon, color: _VC.textSub, size: 18),
+        child: Icon(icon, color: _VC.textPrimary, size: 18),
       ),
     );
+
+    if (tooltip != null) {
+      return Tooltip(message: tooltip!, child: btn);
+    }
+    return btn;
   }
 }
