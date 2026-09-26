@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/gradient_orb.dart';
@@ -13,6 +14,8 @@ class OnboardingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -38,16 +41,16 @@ class OnboardingScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 44),
-                      const Text(
-                        'Your medication,\nmade simple.',
+                      Text(
+                        l10n.onboardingHeadline,
                         textAlign: TextAlign.center,
                         style: AppTheme.headerLarge,
                       ),
                       const SizedBox(height: 16),
-                      const Text(
-                        'Clear guidance. Easy identification.\nBuilt for everyone.',
+                      Text(
+                        l10n.onboardingSubtitle,
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 16,
                           height: 1.5,
                           color: AppColors.textSecondary,
@@ -61,7 +64,7 @@ class OnboardingScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: PrimaryButton(
-                label: 'Get started',
+                label: l10n.getStarted,
                 onPressed: () => Navigator.of(context).pushReplacement(
                   MaterialPageRoute(builder: (_) => const MainShell()),
                 ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/medication.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
@@ -23,6 +24,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final locale = Localizations.localeOf(context).languageCode;
     final state = context.watch<AppState>();
     final now = DateTime.now();
     final days = List.generate(7, (i) => now.add(Duration(days: i)));
@@ -49,7 +52,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-            child: Text('Schedule', style: AppTheme.headerLarge),
+            child: Text(l10n.schedule, style: AppTheme.headerLarge),
           ),
           SizedBox(
             height: 64,
@@ -58,7 +61,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               children: [
                 for (var i = 0; i < days.length; i++)
-                  _dayPill(days[i], selected: i == _selectedDay, index: i),
+                  _dayPill(
+                    days[i],
+                    locale: locale,
+                    selected: i == _selectedDay,
+                    index: i,
+                  ),
               ],
             ),
           ),
@@ -66,9 +74,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               children: [
-                _section(context, 'MORNING', morning),
-                _section(context, 'AFTERNOON', afternoon),
-                _section(context, 'EVENING', evening),
+                _section(context, l10n.morning, morning),
+                _section(context, l10n.afternoon, afternoon),
+                _section(context, l10n.evening, evening),
               ],
             ),
           ),
@@ -77,7 +85,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
   }
 
-  Widget _dayPill(DateTime day, {required bool selected, required int index}) {
+  Widget _dayPill(
+    DateTime day, {
+    required String locale,
+    required bool selected,
+    required int index,
+  }) {
     return GestureDetector(
       onTap: () => setState(() => _selectedDay = index),
       child: Container(
@@ -96,7 +109,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              shortWeekday(day),
+              shortWeekday(day, locale),
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
@@ -130,7 +143,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         Padding(
           padding: const EdgeInsets.only(top: 12, bottom: 12),
           child: Text(
-            label,
+            label.toUpperCase(),
             style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,

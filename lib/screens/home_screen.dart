@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/medication.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
@@ -20,6 +21,8 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final locale = Localizations.localeOf(context).languageCode;
     final state = context.watch<AppState>();
     final active = state.medications
         .where((m) => m.status == MedicationStatus.active)
@@ -39,17 +42,20 @@ class HomeScreen extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Good morning, ${state.userName}',
+                      l10n.greeting(state.userName),
                       style: AppTheme.headerLarge,
                     ),
                     const SizedBox(height: 4),
-                    Text(fullDate(DateTime.now()), style: AppTheme.bodyMedium),
+                    Text(
+                      fullDate(DateTime.now(), locale),
+                      style: AppTheme.bodyMedium,
+                    ),
                   ],
                 ),
               ),
               CircleIconButton(
                 icon: Icons.settings_outlined,
-                onTap: () => showComingSoon(context, 'Settings'),
+                onTap: () => showComingSoon(context, l10n.settings),
               ),
             ],
           ),
@@ -75,9 +81,9 @@ class HomeScreen extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        "It's time for your medication",
-                        style: TextStyle(
+                      Text(
+                        l10n.timeForMedication,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                           fontSize: 16,
@@ -85,7 +91,7 @@ class HomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        '${active.length} medications · '
+                        '${l10n.medicationCount(active.length)} · '
                         '${next?.times.first ?? '9:00 AM'}',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.85),
@@ -104,7 +110,7 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          const Text('Today', style: AppTheme.sectionLabel),
+          Text(l10n.today, style: AppTheme.sectionLabel),
           const SizedBox(height: 12),
           for (final m in active)
             Padding(

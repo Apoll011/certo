@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -18,6 +19,7 @@ class AddMedicationScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final state = context.watch<AppState>();
     final recent = state.recentMedications.take(4).toList();
 
@@ -35,9 +37,9 @@ class AddMedicationScreen extends StatelessWidget {
                     onTap: () => Navigator.of(context).pop(),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Center(
-                      child: Text('Add medication', style: AppTheme.headerMedium),
+                      child: Text(l10n.addMedication, style: AppTheme.headerMedium),
                     ),
                   ),
                   const SizedBox(width: 56),
@@ -49,24 +51,20 @@ class AddMedicationScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
                 children: [
                   _optionCard(
-                    context,
                     icon: Icons.camera_alt_outlined,
-                    title: 'Scan package',
-                    subtitle: 'Use your camera to identify',
-                    onTap: () =>
-                        showComingSoon(context, 'Camera scanning is coming soon'),
+                    title: l10n.scanPackage,
+                    subtitle: l10n.scanPackageSubtitle,
+                    onTap: () => showComingSoon(context, l10n.cameraComingSoon),
                   ),
                   const SizedBox(height: 12),
                   _optionCard(
-                    context,
                     icon: Icons.edit_outlined,
-                    title: 'Add manually',
-                    subtitle: 'Enter the information yourself',
-                    onTap: () =>
-                        showComingSoon(context, 'Manual entry is coming soon'),
+                    title: l10n.addManually,
+                    subtitle: l10n.addManuallySubtitle,
+                    onTap: () => showComingSoon(context, l10n.manualComingSoon),
                   ),
                   const SizedBox(height: 28),
-                  const Text('Recent', style: AppTheme.sectionLabel),
+                  Text(l10n.recent, style: AppTheme.sectionLabel),
                   const SizedBox(height: 12),
                   for (final m in recent)
                     Padding(
@@ -91,8 +89,10 @@ class AddMedicationScreen extends StatelessWidget {
                                 children: [
                                   Text(m.name, style: AppTheme.titleMedium),
                                   const SizedBox(height: 3),
-                                  Text(addedAgo(m.startedAt),
-                                      style: AppTheme.bodySmall),
+                                  Text(
+                                    _addedAgo(l10n, m.startedAt),
+                                    style: AppTheme.bodySmall,
+                                  ),
                                 ],
                               ),
                             ),
@@ -114,8 +114,14 @@ class AddMedicationScreen extends StatelessWidget {
     );
   }
 
-  Widget _optionCard(
-    BuildContext context, {
+  String _addedAgo(AppLocalizations l10n, DateTime startedAt) {
+    final days = daysSince(startedAt);
+    if (days <= 0) return l10n.addedToday;
+    if (days == 1) return l10n.addedYesterday;
+    return l10n.addedDaysAgo(days);
+  }
+
+  Widget _optionCard({
     required IconData icon,
     required String title,
     required String subtitle,

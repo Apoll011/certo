@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/medication.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
@@ -23,6 +24,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final state = context.watch<AppState>();
     final list = state.medicationsWithStatus(_filter);
 
@@ -33,8 +35,8 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
         children: [
           Row(
             children: [
-              const Expanded(
-                child: Text('My medications', style: AppTheme.headerLarge),
+              Expanded(
+                child: Text(l10n.myMedications, style: AppTheme.headerLarge),
               ),
               CircleIconButton(
                 icon: Icons.add_rounded,
@@ -49,10 +51,10 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                _filterChip('All', null),
-                _filterChip('Active', MedicationStatus.active),
-                _filterChip('Paused', MedicationStatus.paused),
-                _filterChip('Finished', MedicationStatus.finished),
+                _filterChip(l10n.filterAll, null),
+                _filterChip(l10n.filterActive, MedicationStatus.active),
+                _filterChip(l10n.filterPaused, MedicationStatus.paused),
+                _filterChip(l10n.filterFinished, MedicationStatus.finished),
               ],
             ),
           ),

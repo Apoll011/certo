@@ -1,0 +1,97 @@
+{
+  "@@locale": "en",
+
+  "onboardingHeadline": "Your medication,\nmade simple.",
+  "onboardingSubtitle": "Clear guidance. Easy identification.\nBuilt for everyone.",
+  "getStarted": "Get started",
+
+  "greeting": "Good morning, {name}",
+  "@greeting": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "timeForMedication": "It's time for your medication",
+  "medicationCount": "{count, plural, one{{count} medication} other{{count} medications}}",
+  "@medicationCount": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "today": "Today",
+
+  "settings": "Settings",
+  "voiceComingSoon": "Voice assistant is coming soon",
+  "cameraComingSoon": "Camera scanning is coming soon",
+  "manualComingSoon": "Manual entry is coming soon",
+  "editMedication": "Edit medication",
+
+  "home": "Home",
+  "meds": "Meds",
+  "schedule": "Schedule",
+  "caregiver": "Caregiver",
+
+  "myMedications": "My medications",
+  "filterAll": "All",
+  "filterActive": "Active",
+  "filterPaused": "Paused",
+  "filterFinished": "Finished",
+
+  "addMedication": "Add medication",
+  "scanPackage": "Scan package",
+  "scanPackageSubtitle": "Use your camera to identify",
+  "addManually": "Add manually",
+  "addManuallySubtitle": "Enter the information yourself",
+  "recent": "Recent",
+
+  "medicationDetail": "Medication detail",
+  "medicationNotFound": "Medication not found",
+  "dosage": "Dosage",
+  "takeDosage": "Take {dosage}",
+  "@takeDosage": {
+    "placeholders": {
+      "dosage": { "type": "String" }
+    }
+  },
+  "scheduleLabel": "Schedule",
+  "started": "Started",
+  "notes": "Notes",
+  "markAsTaken": "Mark as taken",
+  "taken": "Taken",
+  "markedAsTaken": "Marked as taken ✓",
+
+  "morning": "Morning",
+  "afternoon": "Afternoon",
+  "evening": "Evening",
+
+  "caregiverSupport": "Caregiver support",
+  "caregiverBody": "Invite a family member or care team to help you stay on track with your medication. This feature is coming soon.",
+
+  "alarmRinging": "MEDICATION ALARM · RINGING",
+  "alarmTitle": "Time to take your medicine",
+  "scheduledFor": "Scheduled for {time}",
+  "@scheduledFor": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+  "takeAfterBreakfast": "Take after breakfast",
+  "swallowWithWater": "Swallow {dosage} with water",
+  "@swallowWithWater": {
+    "placeholders": {
+      "dosage": { "type": "String" }
+    }
+  },
+  "alarmSoundPlaying": "Alarm sound is playing until you respond",
+  "snooze": "Snooze 10 minutes",
+  "snoozed": "Snoozed for 10 minutes",
+
+  "addedToday": "Added today",
+  "addedYesterday": "Added yesterday",
+  "addedDaysAgo": "Added {count} days ago",
+  "@addedDaysAgo": {
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  }
+}

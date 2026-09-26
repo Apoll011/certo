@@ -1,0 +1,67 @@
+{
+  "@@locale": "pt",
+
+  "onboardingHeadline": "Seu medicamento,\ndescomplicado.",
+  "onboardingSubtitle": "Orientação clara. Identificação fácil.\nFeito para todos.",
+  "getStarted": "Começar",
+
+  "greeting": "Bom dia, {name}",
+  "timeForMedication": "Está na hora do seu medicamento",
+  "medicationCount": "{count, plural, one{{count} medicamento} other{{count} medicamentos}}",
+  "today": "Hoje",
+
+  "settings": "Configurações",
+  "voiceComingSoon": "Assistente de voz em breve",
+  "cameraComingSoon": "Identificação por câmera em breve",
+  "manualComingSoon": "Cadastro manual em breve",
+  "editMedication": "Editar medicamento",
+
+  "home": "Início",
+  "meds": "Remédios",
+  "schedule": "Agenda",
+  "caregiver": "Cuidador",
+
+  "myMedications": "Meus medicamentos",
+  "filterAll": "Todos",
+  "filterActive": "Ativos",
+  "filterPaused": "Pausados",
+  "filterFinished": "Concluídos",
+
+  "addMedication": "Adicionar medicamento",
+  "scanPackage": "Escanear embalagem",
+  "scanPackageSubtitle": "Use a câmera para identificar",
+  "addManually": "Adicionar manualmente",
+  "addManuallySubtitle": "Insira as informações você mesmo",
+  "recent": "Recentes",
+
+  "medicationDetail": "Detalhes do medicamento",
+  "medicationNotFound": "Medicamento não encontrado",
+  "dosage": "Dose",
+  "takeDosage": "Tomar {dosage}",
+  "scheduleLabel": "Horários",
+  "started": "Início",
+  "notes": "Observações",
+  "markAsTaken": "Marcar como tomado",
+  "taken": "Tomado",
+  "markedAsTaken": "Marcado como tomado ✓",
+
+  "morning": "Manhã",
+  "afternoon": "Tarde",
+  "evening": "Noite",
+
+  "caregiverSupport": "Suporte do cuidador",
+  "caregiverBody": "Convide um familiar ou equipe de cuidados para ajudar você a manter seus medicamentos em dia. Este recurso estará disponível em breve.",
+
+  "alarmRinging": "ALARME DE MEDICAMENTO · TOCANDO",
+  "alarmTitle": "Hora de tomar seu medicamento",
+  "scheduledFor": "Agendado para {time}",
+  "takeAfterBreakfast": "Tomar após o café da manhã",
+  "swallowWithWater": "Engula {dosage} com água",
+  "alarmSoundPlaying": "O som do alarme tocará até você responder",
+  "snooze": "Adiar 10 minutos",
+  "snoozed": "Adiado por 10 minutos",
+
+  "addedToday": "Adicionado hoje",
+  "addedYesterday": "Adicionado ontem",
+  "addedDaysAgo": "Adicionado há {count} dias"
+}

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'l10n/app_localizations.dart';
 import 'screens/onboarding_screen.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme.dart';
@@ -20,6 +21,8 @@ class CertoApp extends StatelessWidget {
         title: 'Certo',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light(),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         home: const OnboardingScreen(),
       ),
     );

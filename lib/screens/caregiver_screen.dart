@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_card.dart';
@@ -11,12 +12,14 @@ class CaregiverScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
     return SafeArea(
       bottom: false,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
-          const Text('Caregiver', style: AppTheme.headerLarge),
+          Text(l10n.caregiver, style: AppTheme.headerLarge),
           const SizedBox(height: 24),
           AppCard(
             child: Column(
@@ -29,13 +32,12 @@ class CaregiverScreen extends StatelessWidget {
                   iconColor: AppColors.info,
                 ),
                 const SizedBox(height: 18),
-                const Text('Caregiver support', style: AppTheme.headerMedium),
+                Text(l10n.caregiverSupport, style: AppTheme.headerMedium),
                 const SizedBox(height: 8),
-                const Text(
-                  'Invite a family member or care team to help you stay on '
-                  'track with your medication. This feature is coming soon.',
+                Text(
+                  l10n.caregiverBody,
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 15, height: 1.5),
+                  style: const TextStyle(fontSize: 15, height: 1.5),
                 ),
                 const SizedBox(height: 8),
               ],

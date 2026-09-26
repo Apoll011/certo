@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/medication.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
@@ -17,6 +18,8 @@ class AlarmScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final locale = Localizations.localeOf(context).languageCode;
     final state = context.watch<AppState>();
 
     return Scaffold(
@@ -39,7 +42,7 @@ class AlarmScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  fullDate(DateTime.now()),
+                  fullDate(DateTime.now(), locale),
                   style: TextStyle(
                     fontSize: 15,
                     color: Colors.white.withValues(alpha: 0.55),
@@ -135,9 +138,9 @@ class AlarmScreen extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Text(
-                            'MEDICATION ALARM · RINGING',
-                            style: TextStyle(
+                          Text(
+                            l10n.alarmRinging,
+                            style: const TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                               letterSpacing: 0.6,
@@ -148,14 +151,14 @@ class AlarmScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    const Text(
-                      'Time to take your medicine',
+                    Text(
+                      l10n.alarmTitle,
                       textAlign: TextAlign.center,
                       style: AppTheme.headerMedium,
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Scheduled for ${medication.times.first}',
+                      l10n.scheduledFor(medication.times.first),
                       style: AppTheme.bodyMedium,
                     ),
                     const SizedBox(height: 20),
@@ -223,9 +226,9 @@ class AlarmScreen extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Take after breakfast',
-                                  style: TextStyle(
+                                Text(
+                                  l10n.takeAfterBreakfast,
+                                  style: const TextStyle(
                                     fontWeight: FontWeight.w600,
                                     fontSize: 15,
                                     color: AppColors.textPrimary,
@@ -233,7 +236,7 @@ class AlarmScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'Swallow ${medication.dosage} with water',
+                                  l10n.swallowWithWater(medication.dosage),
                                   style: AppTheme.bodyMedium,
                                 ),
                               ],
@@ -252,15 +255,17 @@ class AlarmScreen extends StatelessWidget {
                           size: 18,
                         ),
                         const SizedBox(width: 8),
-                        const Text(
-                          'Alarm sound is playing until you respond',
-                          style: AppTheme.bodySmall,
+                        Expanded(
+                          child: Text(
+                            l10n.alarmSoundPlaying,
+                            style: AppTheme.bodySmall,
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 20),
                     PrimaryButton(
-                      label: 'Taken',
+                      label: l10n.taken,
                       icon: Icons.check_rounded,
                       onPressed: () {
                         state.markTaken(medication.id);
@@ -269,17 +274,17 @@ class AlarmScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     PrimaryButton(
-                      label: 'Snooze 10 minutes',
+                      label: l10n.snooze,
                       icon: Icons.snooze_rounded,
                       filled: false,
                       onPressed: () {
                         ScaffoldMessenger.of(context)
                           ..hideCurrentSnackBar()
                           ..showSnackBar(
-                            const SnackBar(
-                              content: Text('Snoozed for 10 minutes'),
+                            SnackBar(
+                              content: Text(l10n.snoozed),
                               behavior: SnackBarBehavior.floating,
-                              duration: Duration(seconds: 2),
+                              duration: const Duration(seconds: 2),
                             ),
                           );
                         Navigator.of(context).pop();

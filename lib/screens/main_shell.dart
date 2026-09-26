@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../utils/ui.dart';
@@ -18,6 +19,8 @@ class MainShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AppState>(
       builder: (context, state, _) {
+        final l10n = AppLocalizations.of(context)!;
+
         return Scaffold(
           backgroundColor: AppColors.background,
           body: Column(
@@ -36,8 +39,7 @@ class MainShell extends StatelessWidget {
               CertoBottomNavBar(
                 selectedIndex: state.selectedTabIndex,
                 onTabChanged: (i) => state.setTab(i),
-                onMicTap: () =>
-                    showComingSoon(context, 'Voice assistant is coming soon'),
+                onMicTap: () => showComingSoon(context, l10n.voiceComingSoon),
               ),
             ],
           ),

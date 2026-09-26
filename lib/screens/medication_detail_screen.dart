@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
@@ -20,13 +21,15 @@ class MedicationDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final locale = Localizations.localeOf(context).languageCode;
     final state = context.watch<AppState>();
     final med = state.medicationById(medicationId);
 
     if (med == null) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: AppColors.background,
-        body: Center(child: Text('Medication not found')),
+        body: Center(child: Text(l10n.medicationNotFound)),
       );
     }
 
@@ -46,17 +49,17 @@ class MedicationDetailScreen extends StatelessWidget {
                     onTap: () => Navigator.of(context).pop(),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Center(
                       child: Text(
-                        'Medication detail',
+                        l10n.medicationDetail,
                         style: AppTheme.headerMedium,
                       ),
                     ),
                   ),
                   CircleIconButton(
                     icon: Icons.edit_outlined,
-                    onTap: () => showComingSoon(context, 'Edit medication'),
+                    onTap: () => showComingSoon(context, l10n.editMedication),
                   ),
                 ],
               ),
@@ -88,25 +91,26 @@ class MedicationDetailScreen extends StatelessWidget {
                       children: [
                         _detailRow(
                           icon: Icons.medication_outlined,
-                          label: 'Dosage',
-                          value: 'Take ${med.dosage}\n${med.instruction}',
+                          label: l10n.dosage,
+                          value:
+                              '${l10n.takeDosage(med.dosage)}\n${med.instruction}',
                         ),
                         const _Divider(),
                         _detailRow(
                           icon: Icons.schedule_rounded,
-                          label: 'Schedule',
+                          label: l10n.scheduleLabel,
                           value: med.timesLine,
                         ),
                         const _Divider(),
                         _detailRow(
                           icon: Icons.calendar_today_outlined,
-                          label: 'Started',
-                          value: fullDate(med.startedAt),
+                          label: l10n.started,
+                          value: fullDate(med.startedAt, locale),
                         ),
                         const _Divider(),
                         _detailRow(
                           icon: Icons.sticky_note_2_outlined,
-                          label: 'Notes',
+                          label: l10n.notes,
                           value: med.notes,
                         ),
                       ],
@@ -123,7 +127,7 @@ class MedicationDetailScreen extends StatelessWidget {
                 12 + MediaQuery.of(context).padding.bottom,
               ),
               child: PrimaryButton(
-                label: taken ? 'Taken' : 'Mark as taken',
+                label: taken ? l10n.taken : l10n.markAsTaken,
                 icon: taken ? Icons.check_rounded : null,
                 color: taken ? AppColors.success : AppColors.primary,
                 onPressed: taken
@@ -133,10 +137,10 @@ class MedicationDetailScreen extends StatelessWidget {
                         ScaffoldMessenger.of(context)
                           ..hideCurrentSnackBar()
                           ..showSnackBar(
-                            const SnackBar(
-                              content: Text('Marked as taken ✓'),
+                            SnackBar(
+                              content: Text(l10n.markedAsTaken),
                               behavior: SnackBarBehavior.floating,
-                              duration: Duration(seconds: 2),
+                              duration: const Duration(seconds: 2),
                             ),
                           );
                       },
