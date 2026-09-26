@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
-import 'package:web_socket_channel/io.dart';
+import 'package:web_socket_channel/status.dart' as ws_status;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../config/app_config.dart';
+import '../web/stt_socket.dart';
 
 /// Events emitted by [ElevenLabsService] during a voice session.
 sealed class VoiceEvent {}
@@ -154,11 +154,7 @@ class ElevenLabsService {
 
     try {
       debugPrint('ElevenLabs STT: connecting to $uri ...');
-      _wsChannel = IOWebSocketChannel.connect(
-        uri,
-        headers: {'xi-api-key': apiKey},
-        pingInterval: const Duration(seconds: 15),
-      );
+      _wsChannel = await connectSttSocket(uri, apiKey: apiKey);
 
       // Wait for handshake
       await _wsChannel!.ready;
@@ -312,7 +308,7 @@ class ElevenLabsService {
     await _wsSub?.cancel();
     _wsSub = null;
     try {
-      await _wsChannel?.sink.close(WebSocketStatus.normalClosure);
+      await _wsChannel?.sink.close(ws_status.normalClosure);
     } catch (_) {}
     _wsChannel = null;
     debugPrint('ElevenLabs STT: listening stopped');

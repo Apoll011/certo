@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -15,6 +16,8 @@ import 'services/supabase_service.dart';
 import 'state/app_state.dart';
 import 'theme/app_theme.dart';
 import 'utils/format.dart';
+import 'web/demo_nav.dart';
+import 'widgets/web_demo_shell.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +28,8 @@ Future<void> main() async {
 
 class VerifiApp extends StatelessWidget {
   const VerifiApp({super.key});
+
+  static final DemoNavObserver _demoNavObserver = DemoNavObserver();
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +44,15 @@ class VerifiApp extends StatelessWidget {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           navigatorKey: AlarmService.navigatorKey,
+          navigatorObservers: kIsWeb ? [_demoNavObserver] : const [],
+          builder: (context, child) {
+            final content = child ?? const SizedBox.shrink();
+            if (!kIsWeb) return content;
+            return WebDemoShell(
+              showAuth: state.showAuthForm,
+              child: content,
+            );
+          },
           home: const _Root(),
         ),
       ),
@@ -56,7 +70,6 @@ class _Root extends StatefulWidget {
 
 class _RootState extends State<_Root> {
   late AppState _state;
-  bool _showAuth = false;
   bool _alarmScreenShowing = false;
   Timer? _foregroundAlarmTimer;
 
@@ -161,6 +174,7 @@ class _RootState extends State<_Root> {
     _alarmScreenShowing = true;
     AlarmService.navigatorKey.currentState?.push(
       MaterialPageRoute(
+        settings: const RouteSettings(name: DemoRoutes.alarm),
         builder: (_) => AlarmScreen(medication: med!, dueTime: time),
       ),
     ).then((_) {
@@ -177,8 +191,8 @@ class _RootState extends State<_Root> {
 
   void _onAppStateChanged() {
     // After signing out, land back on onboarding rather than the auth form.
-    if (_state.authStatus == AuthStatus.signedOut && _showAuth) {
-      setState(() => _showAuth = false);
+    if (_state.authStatus == AuthStatus.signedOut && _state.showAuthForm) {
+      _state.setShowAuthForm(false);
     }
   }
 
@@ -195,16 +209,19 @@ class _RootState extends State<_Root> {
           // Offline demo: onboarding flows straight into the shell.
           return OnboardingScreen(
             onGetStarted: () => Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (_) => const MainShell()),
+              MaterialPageRoute(
+                settings: const RouteSettings(name: DemoRoutes.home),
+                builder: (_) => const MainShell(),
+              ),
             ),
           );
         }
-        if (!_showAuth) {
+        if (!state.showAuthForm) {
           return OnboardingScreen(
-            onGetStarted: () => setState(() => _showAuth = true),
+            onGetStarted: () => state.setShowAuthForm(true),
           );
         }
-        return AuthScreen(onBack: () => setState(() => _showAuth = false));
+        return AuthScreen(onBack: () => state.setShowAuthForm(false));
     }
   }
 }

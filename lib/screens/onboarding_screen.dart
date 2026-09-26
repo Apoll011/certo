@@ -4,6 +4,7 @@ import '../l10n/app_localizations.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/primary_button.dart';
 import 'main_shell.dart';
+import '../web/demo_nav.dart';
 
 /// First-launch welcome / value-prop screen.
 class OnboardingScreen extends StatelessWidget {
@@ -71,6 +72,7 @@ class OnboardingScreen extends StatelessWidget {
                   onPressed: onGetStarted ??
                       () => Navigator.of(context).pushReplacement(
                             MaterialPageRoute(
+                              settings: const RouteSettings(name: DemoRoutes.home),
                               builder: (_) => const MainShell(),
                             ),
                           ),

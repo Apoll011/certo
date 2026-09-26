@@ -14,6 +14,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/pill_icon.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/screen_header.dart';
+import '../web/demo_nav.dart';
 
 /// Caregiver tab — manage people you support + adherence heatmaps.
 class CaregiverScreen extends StatefulWidget {
@@ -365,6 +366,7 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
   ) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: DemoRoutes.careRecipient),
         builder: (_) => CareRecipientDetailScreen(linkId: link.id),
       ),
     );

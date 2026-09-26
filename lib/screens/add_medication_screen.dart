@@ -14,6 +14,7 @@ import 'manual_medication_form_screen.dart';
 import 'medication_detail_screen.dart';
 import 'visual_verification_screen.dart';
 import 'voice_mode_sheet.dart';
+import '../web/demo_nav.dart';
 
 
 /// Entry point for adding a medication (scan, AI voice, or manual).
@@ -80,6 +81,7 @@ class AddMedicationScreen extends StatelessWidget {
                     subtitle: l10n.addManuallySubtitle,
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
+                        settings: const RouteSettings(name: DemoRoutes.manualMedication),
                         builder: (_) => const ManualMedicationFormScreen(),
                       ),
                     ),
@@ -94,6 +96,7 @@ class AddMedicationScreen extends StatelessWidget {
                         child: AppCard(
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
+                              settings: const RouteSettings(name: DemoRoutes.medicationDetail),
                               builder: (_) => MedicationDetailScreen(
                                 medicationId: m.id,
                               ),

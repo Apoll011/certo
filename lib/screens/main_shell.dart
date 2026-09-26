@@ -22,6 +22,13 @@ class MainShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.read<AppState>();
+    if (!appState.hasEnteredMainShell) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        appState.markEnteredMainShell();
+      });
+    }
+
     return Consumer<AppState>(
       builder: (context, state, _) {
         final wide = MediaQuery.sizeOf(context).width >= AppBreakpoints.medium;

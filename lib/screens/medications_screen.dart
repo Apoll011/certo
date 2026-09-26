@@ -12,6 +12,7 @@ import '../widgets/medication_card.dart';
 import '../widgets/screen_header.dart';
 import 'add_medication_screen.dart';
 import 'medication_detail_screen.dart';
+import '../web/demo_nav.dart';
 
 /// Meds tab — browse and filter all medications.
 class MedicationsScreen extends StatefulWidget {
@@ -45,6 +46,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
               tooltip: l10n.addMedication,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
+                  settings: const RouteSettings(name: DemoRoutes.addMedication),
                   builder: (_) => const AddMedicationScreen(),
                 ),
               ),
@@ -72,6 +74,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                     actionLabel: l10n.addMedication,
                     onAction: () => Navigator.of(context).push(
                       MaterialPageRoute(
+                        settings: const RouteSettings(name: DemoRoutes.addMedication),
                         builder: (_) => const AddMedicationScreen(),
                       ),
                     ),
@@ -91,6 +94,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                   medication: m,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
+                      settings: const RouteSettings(name: DemoRoutes.medicationDetail),
                       builder: (_) =>
                           MedicationDetailScreen(medicationId: m.id),
                     ),

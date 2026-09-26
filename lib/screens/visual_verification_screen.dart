@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
@@ -15,6 +14,7 @@ import '../models/medication.dart';
 import '../services/elevenlabs_service.dart';
 import '../state/app_state.dart';
 import '../utils/schedule.dart';
+import '../web/demo_nav.dart';
 import '../widgets/chat_ui_attachment.dart';
 import 'voice_mode_sheet.dart';
 
@@ -42,6 +42,7 @@ Future<void> showVisualVerificationScreen(
       );
   return Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
+      settings: const RouteSettings(name: DemoRoutes.visualVerify),
       builder: (_) => VisualVerificationScreen(
         targetMedication: targetMedication,
         request: req,
@@ -161,11 +162,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
     final bytes = Uint8List.fromList(_ttsBuffer);
     _ttsBuffer.clear();
     try {
-      final tempFile = File(
-        '${Directory.systemTemp.path}/visual_tts_${DateTime.now().millisecondsSinceEpoch}.mp3',
-      );
-      await tempFile.writeAsBytes(bytes, flush: true);
-      await _player.play(DeviceFileSource(tempFile.path));
+      await _player.play(BytesSource(bytes));
     } catch (e) {
       debugPrint('VisualMode: playback failed: $e');
       if (_ttsDone != null && !_ttsDone!.isCompleted) _ttsDone!.complete();
@@ -565,7 +562,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
 
     try {
       final file = await cam.takePicture();
-      final bytes = await File(file.path).readAsBytes();
+      final bytes = await file.readAsBytes();
       if (!mounted) return;
 
       // Freeze the frame and scan the whole captured image while AI runs.
@@ -781,6 +778,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
   void _openVoiceMode() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: DemoRoutes.voice),
         builder: (_) => VoiceModeScreen(
           intent: widget.intent == VisualModeIntent.addMedication
               ? VoiceModeIntent.addMedication

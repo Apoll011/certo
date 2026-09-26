@@ -12,6 +12,7 @@ import '../widgets/medication_card.dart';
 import '../widgets/screen_header.dart';
 import '../widgets/taken_checkbox.dart';
 import 'medication_detail_screen.dart';
+import '../web/demo_nav.dart';
 
 /// A single item in the horizontal day strip (a day pill or a month label).
 class _StripItem {
@@ -338,6 +339,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               medication: m,
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(
+                  settings: const RouteSettings(name: DemoRoutes.medicationDetail),
                   builder: (_) => MedicationDetailScreen(medicationId: m.id),
                 ),
               ),

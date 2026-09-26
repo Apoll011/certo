@@ -12,6 +12,7 @@ import '../ai/ai.dart';
 import '../config/app_config.dart';
 import '../services/elevenlabs_service.dart';
 import '../state/app_state.dart';
+import '../web/demo_nav.dart';
 import '../widgets/chat_ui_attachment.dart';
 import '../widgets/voice_orb.dart';
 import 'visual_verification_screen.dart';
@@ -66,6 +67,7 @@ Future<void> showVoiceMode(
 }) {
   return Navigator.of(context).push<void>(
     PageRouteBuilder<void>(
+      settings: const RouteSettings(name: DemoRoutes.voice),
       opaque: true,
       fullscreenDialog: true,
       transitionDuration: const Duration(milliseconds: 420),
@@ -549,6 +551,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           if (!mounted) return;
           await Navigator.of(context).pushReplacement(
             MaterialPageRoute<void>(
+              settings: const RouteSettings(name: DemoRoutes.visualVerify),
               builder: (_) => VisualVerificationScreen(request: request),
               fullscreenDialog: true,
             ),

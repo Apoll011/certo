@@ -15,6 +15,7 @@ import '../widgets/pill_icon.dart';
 import '../widgets/primary_button.dart';
 import '../widgets/screen_header.dart';
 import 'manual_medication_form_screen.dart';
+import '../web/demo_nav.dart';
 
 /// Full info for a single medication.
 class MedicationDetailScreen extends StatelessWidget {
@@ -83,6 +84,7 @@ class MedicationDetailScreen extends StatelessWidget {
                   tooltip: l10n.editMedication,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
+                      settings: const RouteSettings(name: DemoRoutes.manualMedication),
                       builder: (_) =>
                           ManualMedicationFormScreen(medication: med),
                     ),

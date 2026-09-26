@@ -78,6 +78,25 @@ class AppState extends ChangeNotifier {
   String? get userEmail => _user?.email;
   bool get isAuthenticated => _user != null;
 
+  /// True after the user reaches [MainShell] (including offline demo).
+  /// Used by the Chrome side-guide to leave the onboarding copy behind.
+  bool hasEnteredMainShell = false;
+
+  /// Auth form visible (vs onboarding) while signed out. Chrome guide uses this.
+  bool showAuthForm = false;
+
+  void markEnteredMainShell() {
+    if (hasEnteredMainShell) return;
+    hasEnteredMainShell = true;
+    notifyListeners();
+  }
+
+  void setShowAuthForm(bool value) {
+    if (showAuthForm == value) return;
+    showAuthForm = value;
+    notifyListeners();
+  }
+
   /// Overrides the system locale; null means "follow the device".
   Locale? _localeOverride;
   Locale? get localeOverride => _localeOverride;
@@ -250,6 +269,8 @@ class AppState extends ChangeNotifier {
   void _onSignedOut() {
     _user = null;
     authStatus = AuthStatus.signedOut;
+    hasEnteredMainShell = false;
+    showAuthForm = false;
     _seedMock();
     _restoreTakenIdsFromPrefs();
     notifyListeners();

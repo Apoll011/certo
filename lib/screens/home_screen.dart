@@ -17,6 +17,7 @@ import '../widgets/screen_header.dart';
 import '../widgets/taken_checkbox.dart';
 import 'add_medication_screen.dart';
 import 'medication_detail_screen.dart';
+import '../web/demo_nav.dart';
 import 'settings_screen.dart';
 
 /// Home tab — today's checklist with a time-sensitive, expandable reminder.
@@ -71,7 +72,10 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icons.settings_outlined,
               tooltip: l10n.settings,
               onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                MaterialPageRoute(
+                  settings: const RouteSettings(name: DemoRoutes.settings),
+                  builder: (_) => const SettingsScreen(),
+                ),
               ),
             ),
           ),
@@ -83,7 +87,10 @@ class _HomeScreenState extends State<HomeScreen> {
               subtitle: l10n.noMedicationsBody,
               actionLabel: l10n.addMedication,
               onAction: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AddMedicationScreen()),
+                MaterialPageRoute(
+                  settings: const RouteSettings(name: DemoRoutes.addMedication),
+                  builder: (_) => const AddMedicationScreen(),
+                ),
               ),
             )
           else if (active.isEmpty)
@@ -93,7 +100,10 @@ class _HomeScreenState extends State<HomeScreen> {
               subtitle: l10n.noActiveMedicationsBody,
               actionLabel: l10n.addMedication,
               onAction: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AddMedicationScreen()),
+                MaterialPageRoute(
+                  settings: const RouteSettings(name: DemoRoutes.addMedication),
+                  builder: (_) => const AddMedicationScreen(),
+                ),
               ),
             )
           else ...[
@@ -125,6 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     medication: m,
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
+                        settings: const RouteSettings(name: DemoRoutes.medicationDetail),
                         builder: (_) =>
                             MedicationDetailScreen(medicationId: m.id),
                       ),

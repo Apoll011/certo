@@ -11,6 +11,7 @@ import '../widgets/app_card.dart';
 import '../widgets/circle_icon_button.dart';
 import '../widgets/screen_header.dart';
 import 'caregiver_screen.dart';
+import '../web/demo_nav.dart';
 
 /// Settings: language, profile, alarms, account.
 class SettingsScreen extends StatelessWidget {
@@ -272,6 +273,7 @@ class SettingsScreen extends StatelessWidget {
     }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
+        settings: const RouteSettings(name: DemoRoutes.caregiver),
         builder: (_) => const CaregiverScreen(),
       ),
     );
