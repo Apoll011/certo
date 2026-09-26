@@ -112,5 +112,52 @@
   "authFillAll": "Please enter your email and password.",
   "signOut": "Sign out",
   "signOutConfirm": "Sign out of Certo?",
-  "cancel": "Cancel"
+  "cancel": "Cancel",
+
+  "profile": "Profile",
+  "language": "Language",
+  "languageSystem": "System default",
+  "languageEnglish": "English",
+  "languagePortuguese": "Português",
+  "notifications": "Notifications",
+  "notificationsComingSoon": "Notification settings are coming soon",
+  "account": "Account",
+  "about": "About",
+  "aboutBody": "Certo — medication reminders made simple.",
+  "editName": "Edit name",
+  "save": "Save",
+  "nameSaved": "Name saved ✓",
+
+  "medicationName": "Medication name",
+  "medicationNameHint": "e.g. Amoxicillin 500mg",
+  "dosageHint": "e.g. 1 tablet",
+  "instruction": "Instruction",
+  "instructionHint": "e.g. After meal",
+  "category": "Category",
+  "categoryHint": "e.g. Antibiotic · Oral tablet",
+  "notesHint": "Optional notes",
+  "times": "Times",
+  "addTime": "Add time",
+  "pillColor": "Pill color",
+  "saveMedication": "Save medication",
+  "medicationSaved": "Medication saved ✓",
+  "fillRequired": "Please enter the medication name.",
+  "addAtLeastOneTime": "Add at least one time.",
+
+  "missedDose": "Missed medication",
+  "wasDueAt": "was due at {time}",
+  "@wasDueAt": {
+    "placeholders": {
+      "time": { "type": "String" }
+    }
+  },
+
+  "noMedicationsTitle": "No medications yet",
+  "noMedicationsBody": "Add your first medication to get started.",
+  "noActiveMedicationsTitle": "No active medications",
+  "noActiveMedicationsBody": "Medications you're currently taking will appear here.",
+  "emptyFilterTitle": "Nothing here",
+  "emptyFilterBody": "No medications match this filter.",
+  "noScheduleTitle": "Nothing scheduled",
+  "noScheduleBody": "No medications scheduled for this day."
 }

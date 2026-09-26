@@ -242,4 +242,121 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get cancel => 'Cancel';
+
+  @override
+  String get profile => 'Profile';
+
+  @override
+  String get language => 'Language';
+
+  @override
+  String get languageSystem => 'System default';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get languagePortuguese => 'Português';
+
+  @override
+  String get notifications => 'Notifications';
+
+  @override
+  String get notificationsComingSoon => 'Notification settings are coming soon';
+
+  @override
+  String get account => 'Account';
+
+  @override
+  String get about => 'About';
+
+  @override
+  String get aboutBody => 'Certo — medication reminders made simple.';
+
+  @override
+  String get editName => 'Edit name';
+
+  @override
+  String get save => 'Save';
+
+  @override
+  String get nameSaved => 'Name saved ✓';
+
+  @override
+  String get medicationName => 'Medication name';
+
+  @override
+  String get medicationNameHint => 'e.g. Amoxicillin 500mg';
+
+  @override
+  String get dosageHint => 'e.g. 1 tablet';
+
+  @override
+  String get instruction => 'Instruction';
+
+  @override
+  String get instructionHint => 'e.g. After meal';
+
+  @override
+  String get category => 'Category';
+
+  @override
+  String get categoryHint => 'e.g. Antibiotic · Oral tablet';
+
+  @override
+  String get notesHint => 'Optional notes';
+
+  @override
+  String get times => 'Times';
+
+  @override
+  String get addTime => 'Add time';
+
+  @override
+  String get pillColor => 'Pill color';
+
+  @override
+  String get saveMedication => 'Save medication';
+
+  @override
+  String get medicationSaved => 'Medication saved ✓';
+
+  @override
+  String get fillRequired => 'Please enter the medication name.';
+
+  @override
+  String get addAtLeastOneTime => 'Add at least one time.';
+
+  @override
+  String get missedDose => 'Missed medication';
+
+  @override
+  String wasDueAt(String time) {
+    return 'was due at $time';
+  }
+
+  @override
+  String get noMedicationsTitle => 'No medications yet';
+
+  @override
+  String get noMedicationsBody => 'Add your first medication to get started.';
+
+  @override
+  String get noActiveMedicationsTitle => 'No active medications';
+
+  @override
+  String get noActiveMedicationsBody =>
+      'Medications you\'re currently taking will appear here.';
+
+  @override
+  String get emptyFilterTitle => 'Nothing here';
+
+  @override
+  String get emptyFilterBody => 'No medications match this filter.';
+
+  @override
+  String get noScheduleTitle => 'Nothing scheduled';
+
+  @override
+  String get noScheduleBody => 'No medications scheduled for this day.';
 }

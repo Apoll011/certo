@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:ui' show Locale;
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../data/medication_repository.dart';
@@ -10,6 +12,9 @@ import '../models/medication.dart';
 import '../services/supabase_service.dart';
 
 enum AuthStatus { loading, signedOut, signedIn }
+
+const String _kLocalePref = 'locale_override';
+const String _kNamePref = 'user_name';
 
 /// Holds the app's working state: auth session, medications, taken set, tab.
 ///
@@ -36,7 +41,14 @@ class AppState extends ChangeNotifier {
   User? _user;
 
   User? get user => _user;
+  String? get userEmail => _user?.email;
   bool get isAuthenticated => _user != null;
+
+  /// Overrides the system locale; null means "follow the device".
+  Locale? _localeOverride;
+  Locale? get localeOverride => _localeOverride;
+
+  SharedPreferences? _prefs;
 
   StreamSubscription<AuthState>? _authSub;
   MedicationRepository? _medsRepo;
@@ -73,6 +85,15 @@ class AppState extends ChangeNotifier {
   Future<void> bootstrap() async {
     if (_bootstrapped) return;
     _bootstrapped = true;
+
+    // Restore persisted preferences (locale + locally-saved profile name).
+    _prefs = await SharedPreferences.getInstance();
+    final savedLocale = _prefs?.getString(_kLocalePref);
+    if (savedLocale != null && savedLocale.isNotEmpty) {
+      _localeOverride = Locale(savedLocale);
+    }
+    final savedName = _prefs?.getString(_kNamePref);
+    if (savedName != null && savedName.isNotEmpty) userName = savedName;
 
     if (!SupabaseService.isConfigured) {
       authStatus = AuthStatus.signedOut;
@@ -139,7 +160,7 @@ class AppState extends ChangeNotifier {
     medications
       ..clear()
       ..addAll(mockMedications);
-    userName = demoUserName;
+    userName = _prefs?.getString(_kNamePref) ?? demoUserName;
     takenIds.clear();
   }
 
@@ -188,6 +209,39 @@ class AppState extends ChangeNotifier {
     }
     // Auth listener also handles this; do it defensively in case it hasn't.
     _onSignedOut();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Settings: locale + profile name
+  // ---------------------------------------------------------------------------
+
+  /// Switches the app language. Pass null to follow the system locale again.
+  Future<void> setLocale(String? code) async {
+    _localeOverride = code == null ? null : Locale(code);
+    if (code == null) {
+      await _prefs?.remove(_kLocalePref);
+    } else {
+      await _prefs?.setString(_kLocalePref, code);
+    }
+    notifyListeners();
+  }
+
+  /// Updates the user's display name locally and, when signed in, in Supabase.
+  Future<void> updateUserName(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    userName = trimmed;
+    await _prefs?.setString(_kNamePref, trimmed);
+    final uid = _user?.id;
+    final repo = _profileRepo;
+    if (isAuthenticated && uid != null && repo != null) {
+      try {
+        await repo.updateName(uid, trimmed);
+      } catch (e) {
+        debugPrint('Certo: update profile name failed — $e');
+      }
+    }
+    notifyListeners();
   }
 
   // ---------------------------------------------------------------------------

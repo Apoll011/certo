@@ -1,0 +1,346 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../l10n/app_localizations.dart';
+import '../models/medication.dart';
+import '../state/app_state.dart';
+import '../theme/app_colors.dart';
+import '../theme/app_theme.dart';
+import '../utils/format.dart';
+import '../widgets/circle_icon_button.dart';
+import '../widgets/primary_button.dart';
+
+/// Manual "add medication" form. Saves through [AppState.addMedication],
+/// which writes to Supabase when signed in and to local state otherwise.
+class ManualMedicationFormScreen extends StatefulWidget {
+  const ManualMedicationFormScreen({super.key});
+
+  @override
+  State<ManualMedicationFormScreen> createState() =>
+      _ManualMedicationFormScreenState();
+}
+
+class _ManualMedicationFormScreenState
+    extends State<ManualMedicationFormScreen> {
+  final _nameController = TextEditingController();
+  final _dosageController = TextEditingController();
+  final _instructionController = TextEditingController();
+  final _categoryController = TextEditingController();
+  final _notesController = TextEditingController();
+
+  final List<String> _times = [];
+  int _pillColorIndex = 0;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _dosageController.dispose();
+    _instructionController.dispose();
+    _categoryController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+              child: Row(
+                children: [
+                  CircleIconButton(
+                    icon: Icons.arrow_back_rounded,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        l10n.addMedication,
+                        style: AppTheme.headerMedium,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 56),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                children: [
+                  _field(
+                    l10n.medicationName,
+                    _nameController,
+                    hint: l10n.medicationNameHint,
+                    icon: Icons.medication_outlined,
+                  ),
+                  const SizedBox(height: 16),
+                  _field(
+                    l10n.dosage,
+                    _dosageController,
+                    hint: l10n.dosageHint,
+                    icon: Icons.scale_outlined,
+                  ),
+                  const SizedBox(height: 16),
+                  _field(
+                    l10n.instruction,
+                    _instructionController,
+                    hint: l10n.instructionHint,
+                    icon: Icons.restaurant_outlined,
+                  ),
+                  const SizedBox(height: 16),
+                  _field(
+                    l10n.category,
+                    _categoryController,
+                    hint: l10n.categoryHint,
+                    icon: Icons.category_outlined,
+                  ),
+                  const SizedBox(height: 16),
+                  _field(
+                    l10n.notes,
+                    _notesController,
+                    hint: l10n.notesHint,
+                    icon: Icons.sticky_note_2_outlined,
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 24),
+                  _timesSection(l10n),
+                  const SizedBox(height: 24),
+                  _colorSection(l10n),
+                  if (_error != null) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      style: const TextStyle(
+                        color: AppColors.danger,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                8,
+                20,
+                12 + MediaQuery.of(context).padding.bottom,
+              ),
+              child: PrimaryButton(
+                label: l10n.saveMedication,
+                icon: _saving ? null : Icons.check_rounded,
+                onPressed: _saving ? null : _save,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _field(
+    String label,
+    TextEditingController controller, {
+    required String hint,
+    required IconData icon,
+    int maxLines = 1,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: AppTheme.bodySmall),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          maxLines: maxLines,
+          textCapitalization: TextCapitalization.sentences,
+          style: const TextStyle(fontSize: 16, color: AppColors.textPrimary),
+          decoration: InputDecoration(
+            hintText: hint,
+            prefixIcon: Icon(icon, color: AppColors.textSecondary, size: 20),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 16,
+              horizontal: 14,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(
+                color: AppColors.primary,
+                width: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _timesSection(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(l10n.times, style: AppTheme.bodySmall),
+        const SizedBox(height: 8),
+        if (_times.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final time in _times)
+                InputChip(
+                  label: Text(time),
+                  onDeleted: () => setState(() => _times.remove(time)),
+                  deleteIconColor: AppColors.textSecondary,
+                  backgroundColor: AppColors.primarySoft,
+                  labelStyle: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+            ],
+          ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _addTime,
+          icon: const Icon(Icons.add_rounded, size: 20),
+          label: Text(l10n.addTime),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.primary,
+            side: const BorderSide(color: AppColors.primary),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            shape: const StadiumBorder(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _colorSection(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(l10n.pillColor, style: AppTheme.bodySmall),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            for (var i = 0; i < AppColors.pillPalette.length; i++)
+              GestureDetector(
+                onTap: () => setState(() => _pillColorIndex = i),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  margin: const EdgeInsets.only(right: 14),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.pillPalette[i][0],
+                        AppColors.pillPalette[i][1],
+                      ],
+                    ),
+                    border: _pillColorIndex == i
+                        ? Border.all(color: AppColors.primary, width: 3)
+                        : null,
+                  ),
+                  child: _pillColorIndex == i
+                      ? const Icon(
+                          Icons.check_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        )
+                      : null,
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Future<void> _addTime() async {
+    final now = TimeOfDay.now();
+    final picked = await showTimePicker(context: context, initialTime: now);
+    if (picked == null) return;
+    final formatted = _formatTime(picked);
+    if (_times.contains(formatted)) return;
+    setState(() {
+      _times.add(formatted);
+      _times.sort((a, b) => minuteFromTime(a).compareTo(minuteFromTime(b)));
+    });
+  }
+
+  String _formatTime(TimeOfDay t) {
+    final hour12 = t.hour % 12 == 0 ? 12 : t.hour % 12;
+    final minute = t.minute.toString().padLeft(2, '0');
+    final ampm = t.hour < 12 ? 'AM' : 'PM';
+    return '$hour12:$minute $ampm';
+  }
+
+  Future<void> _save() async {
+    final l10n = AppLocalizations.of(context)!;
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      setState(() => _error = l10n.fillRequired);
+      return;
+    }
+    if (_times.isEmpty) {
+      setState(() => _error = l10n.addAtLeastOneTime);
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+
+    final med = Medication(
+      id: 'manual-${DateTime.now().microsecondsSinceEpoch}',
+      name: name,
+      dosage: _dosageController.text.trim(),
+      instruction: _instructionController.text.trim(),
+      category: _categoryController.text.trim(),
+      notes: _notesController.text.trim(),
+      times: List.of(_times),
+      pillColorIndex: _pillColorIndex,
+      status: MedicationStatus.active,
+      startedAt: DateTime.now(),
+    );
+
+    final state = context.read<AppState>();
+    await state.addMedication(med);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(l10n.medicationSaved),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    Navigator.of(context).pop();
+  }
+}

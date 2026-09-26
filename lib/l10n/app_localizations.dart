@@ -523,6 +523,234 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get cancel;
+
+  /// No description provided for @profile.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile'**
+  String get profile;
+
+  /// No description provided for @language.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get language;
+
+  /// No description provided for @languageSystem.
+  ///
+  /// In en, this message translates to:
+  /// **'System default'**
+  String get languageSystem;
+
+  /// No description provided for @languageEnglish.
+  ///
+  /// In en, this message translates to:
+  /// **'English'**
+  String get languageEnglish;
+
+  /// No description provided for @languagePortuguese.
+  ///
+  /// In en, this message translates to:
+  /// **'Português'**
+  String get languagePortuguese;
+
+  /// No description provided for @notifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get notifications;
+
+  /// No description provided for @notificationsComingSoon.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification settings are coming soon'**
+  String get notificationsComingSoon;
+
+  /// No description provided for @account.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get account;
+
+  /// No description provided for @about.
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get about;
+
+  /// No description provided for @aboutBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Certo — medication reminders made simple.'**
+  String get aboutBody;
+
+  /// No description provided for @editName.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit name'**
+  String get editName;
+
+  /// No description provided for @save.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get save;
+
+  /// No description provided for @nameSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Name saved ✓'**
+  String get nameSaved;
+
+  /// No description provided for @medicationName.
+  ///
+  /// In en, this message translates to:
+  /// **'Medication name'**
+  String get medicationName;
+
+  /// No description provided for @medicationNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Amoxicillin 500mg'**
+  String get medicationNameHint;
+
+  /// No description provided for @dosageHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. 1 tablet'**
+  String get dosageHint;
+
+  /// No description provided for @instruction.
+  ///
+  /// In en, this message translates to:
+  /// **'Instruction'**
+  String get instruction;
+
+  /// No description provided for @instructionHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. After meal'**
+  String get instructionHint;
+
+  /// No description provided for @category.
+  ///
+  /// In en, this message translates to:
+  /// **'Category'**
+  String get category;
+
+  /// No description provided for @categoryHint.
+  ///
+  /// In en, this message translates to:
+  /// **'e.g. Antibiotic · Oral tablet'**
+  String get categoryHint;
+
+  /// No description provided for @notesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional notes'**
+  String get notesHint;
+
+  /// No description provided for @times.
+  ///
+  /// In en, this message translates to:
+  /// **'Times'**
+  String get times;
+
+  /// No description provided for @addTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Add time'**
+  String get addTime;
+
+  /// No description provided for @pillColor.
+  ///
+  /// In en, this message translates to:
+  /// **'Pill color'**
+  String get pillColor;
+
+  /// No description provided for @saveMedication.
+  ///
+  /// In en, this message translates to:
+  /// **'Save medication'**
+  String get saveMedication;
+
+  /// No description provided for @medicationSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Medication saved ✓'**
+  String get medicationSaved;
+
+  /// No description provided for @fillRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Please enter the medication name.'**
+  String get fillRequired;
+
+  /// No description provided for @addAtLeastOneTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Add at least one time.'**
+  String get addAtLeastOneTime;
+
+  /// No description provided for @missedDose.
+  ///
+  /// In en, this message translates to:
+  /// **'Missed medication'**
+  String get missedDose;
+
+  /// No description provided for @wasDueAt.
+  ///
+  /// In en, this message translates to:
+  /// **'was due at {time}'**
+  String wasDueAt(String time);
+
+  /// No description provided for @noMedicationsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No medications yet'**
+  String get noMedicationsTitle;
+
+  /// No description provided for @noMedicationsBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your first medication to get started.'**
+  String get noMedicationsBody;
+
+  /// No description provided for @noActiveMedicationsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No active medications'**
+  String get noActiveMedicationsTitle;
+
+  /// No description provided for @noActiveMedicationsBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Medications you\'re currently taking will appear here.'**
+  String get noActiveMedicationsBody;
+
+  /// No description provided for @emptyFilterTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing here'**
+  String get emptyFilterTitle;
+
+  /// No description provided for @emptyFilterBody.
+  ///
+  /// In en, this message translates to:
+  /// **'No medications match this filter.'**
+  String get emptyFilterBody;
+
+  /// No description provided for @noScheduleTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing scheduled'**
+  String get noScheduleTitle;
+
+  /// No description provided for @noScheduleBody.
+  ///
+  /// In en, this message translates to:
+  /// **'No medications scheduled for this day.'**
+  String get noScheduleBody;
 }
 
 class _AppLocalizationsDelegate

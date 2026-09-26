@@ -7,11 +7,15 @@ import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../widgets/app_card.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/medication_card.dart';
 import '../widgets/taken_checkbox.dart';
 import 'medication_detail_screen.dart';
 
-/// Schedule tab — day-by-day view grouped by time of day.
+/// Schedule tab — a navigable month calendar up top, with the selected day's
+/// doses below. Navigation is unbounded into the past (as far as data exists)
+/// and limited to two months into the future.
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
 
@@ -20,30 +24,41 @@ class ScheduleScreen extends StatefulWidget {
 }
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
-  int _selectedDay = 0;
+  late DateTime _selectedDate;
+  late DateTime _visibleMonth;
+
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _selectedDate = DateTime(now.year, now.month, now.day);
+    _visibleMonth = DateTime(now.year, now.month, 1);
+  }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final locale = Localizations.localeOf(context).languageCode;
     final state = context.watch<AppState>();
+
     final now = DateTime.now();
-    final days = List.generate(7, (i) => now.add(Duration(days: i)));
+    final today = DateTime(now.year, now.month, now.day);
+    final maxDate = DateTime(now.year, now.month + 2, now.day);
 
     final active = state.medications
         .where((m) => m.status == MedicationStatus.active)
         .toList();
+    final minDate = _earliestStart(active) ?? today;
 
-    final morning =
-        active.where((m) => hourFromTime(m.times.first) < 12).toList();
-    final afternoon = active
-        .where((m) {
-          final h = hourFromTime(m.times.first);
-          return h >= 12 && h < 17;
-        })
+    final canGoPrev = _monthKey(_visibleMonth) > _monthKey(minDate);
+    final canGoNext = _monthKey(_visibleMonth) < _monthKey(maxDate);
+
+    // Medications that were already active on the selected day.
+    final medsForDay = active
+        .where((m) => _startedOnOrBefore(m.startedAt, _selectedDate))
         .toList();
-    final evening =
-        active.where((m) => hourFromTime(m.times.first) >= 17).toList();
+
+    final isToday = _sameDay(_selectedDate, today);
 
     return SafeArea(
       bottom: false,
@@ -51,91 +66,251 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
             child: Text(l10n.schedule, style: AppTheme.headerLarge),
           ),
-          SizedBox(
-            height: 64,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              children: [
-                for (var i = 0; i < days.length; i++)
-                  _dayPill(
-                    days[i],
-                    locale: locale,
-                    selected: i == _selectedDay,
-                    index: i,
-                  ),
-              ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _calendar(
+              context,
+              locale: locale,
+              today: today,
+              maxDate: maxDate,
+              canGoPrev: canGoPrev,
+              canGoNext: canGoNext,
             ),
           ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-              children: [
-                _section(context, l10n.morning, morning),
-                _section(context, l10n.afternoon, afternoon),
-                _section(context, l10n.evening, evening),
-              ],
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              isToday ? l10n.today : fullDate(_selectedDate, locale),
+              style: AppTheme.sectionLabel,
             ),
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: medsForDay.isEmpty
+                ? ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                    children: [
+                      EmptyState(
+                        icon: Icons.event_busy_outlined,
+                        title: l10n.noScheduleTitle,
+                        subtitle: l10n.noScheduleBody,
+                        iconColor: AppColors.info,
+                        iconBackground: AppColors.infoSoft,
+                      ),
+                    ],
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    children: [
+                      _section(
+                        context,
+                        l10n.morning,
+                        medsForDay
+                            .where(
+                              (m) => minuteFromTime(m.times.first) < 12 * 60,
+                            )
+                            .toList(),
+                        isToday: isToday,
+                      ),
+                      _section(
+                        context,
+                        l10n.afternoon,
+                        medsForDay.where((m) {
+                          final t = minuteFromTime(m.times.first);
+                          return t >= 12 * 60 && t < 17 * 60;
+                        }).toList(),
+                        isToday: isToday,
+                      ),
+                      _section(
+                        context,
+                        l10n.evening,
+                        medsForDay
+                            .where(
+                              (m) => minuteFromTime(m.times.first) >= 17 * 60,
+                            )
+                            .toList(),
+                        isToday: isToday,
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),
     );
   }
 
-  Widget _dayPill(
-    DateTime day, {
+  // ---------------------------------------------------------------------------
+  // Calendar
+  // ---------------------------------------------------------------------------
+
+  Widget _calendar(
+    BuildContext context, {
     required String locale,
-    required bool selected,
-    required int index,
+    required DateTime today,
+    required DateTime maxDate,
+    required bool canGoPrev,
+    required bool canGoNext,
   }) {
-    return GestureDetector(
-      onTap: () => setState(() => _selectedDay = index),
+    final y = _visibleMonth.year;
+    final m = _visibleMonth.month;
+    final daysInMonth = DateTime(y, m + 1, 0).day;
+    final leading = DateTime(y, m, 1).weekday - 1; // Monday-start grid.
+
+    return AppCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _navButton(
+                Icons.chevron_left_rounded,
+                canGoPrev ? _goPrevMonth : null,
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    monthYear(_visibleMonth, locale),
+                    style: AppTheme.titleMedium,
+                  ),
+                ),
+              ),
+              _navButton(
+                Icons.chevron_right_rounded,
+                canGoNext ? _goNextMonth : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              for (var i = 0; i < 7; i++)
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      shortWeekday(DateTime(2021, 1, 4 + i), locale),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          GridView.count(
+            crossAxisCount: 7,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              for (var i = 0; i < leading; i++) const SizedBox.shrink(),
+              for (var d = 1; d <= daysInMonth; d++)
+                _dayCell(DateTime(y, m, d), today, maxDate),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _navButton(IconData icon, VoidCallback? onTap) {
+    return InkWell(
+      onTap: onTap,
+      customBorder: const CircleBorder(),
       child: Container(
-        width: 52,
-        height: 60,
-        margin: const EdgeInsets.only(right: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: selected
-              ? null
-              : Border.all(color: const Color(0xFFE2E2EA)),
-          boxShadow: selected ? AppColors.cardShadow : null,
+        width: 36,
+        height: 36,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: AppColors.background,
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              shortWeekday(day, locale),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: selected
-                    ? Colors.white.withValues(alpha: 0.85)
-                    : AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${day.day}',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: selected ? Colors.white : AppColors.textPrimary,
-              ),
-            ),
-          ],
+        child: Icon(
+          icon,
+          size: 22,
+          color: onTap == null
+              ? AppColors.textSecondary.withValues(alpha: 0.4)
+              : AppColors.textPrimary,
         ),
       ),
     );
   }
 
-  Widget _section(BuildContext context, String label, List<Medication> meds) {
+  Widget _dayCell(DateTime day, DateTime today, DateTime maxDate) {
+    final selected = _sameDay(day, _selectedDate);
+    final isToday = _sameDay(day, today);
+    final enabled = !day.isAfter(maxDate);
+
+    Color textColor;
+    if (!enabled) {
+      textColor = AppColors.textSecondary.withValues(alpha: 0.4);
+    } else if (selected) {
+      textColor = Colors.white;
+    } else if (isToday) {
+      textColor = AppColors.primary;
+    } else {
+      textColor = AppColors.textPrimary;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(3),
+      child: GestureDetector(
+        onTap: enabled ? () => setState(() => _selectedDate = day) : null,
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected ? AppColors.primary : Colors.transparent,
+            border: isToday && !selected
+                ? Border.all(color: AppColors.primary, width: 1.5)
+                : null,
+          ),
+          child: Text(
+            '${day.day}',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              color: textColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _goPrevMonth() {
+    setState(() {
+      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month - 1, 1);
+    });
+  }
+
+  void _goNextMonth() {
+    setState(() {
+      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1, 1);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Day list
+  // ---------------------------------------------------------------------------
+
+  Widget _section(
+    BuildContext context,
+    String label,
+    List<Medication> meds, {
+    required bool isToday,
+  }) {
     if (meds.isEmpty) return const SizedBox.shrink();
     final state = context.read<AppState>();
+    meds.sort(
+      (a, b) =>
+          minuteFromTime(a.times.first)
+              .compareTo(minuteFromTime(b.times.first)),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -162,13 +337,40 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   builder: (_) => MedicationDetailScreen(medicationId: m.id),
                 ),
               ),
-              trailing: TakenCheckbox(
-                taken: state.isTaken(m.id),
-                onToggle: () => state.toggleTaken(m.id),
-              ),
+              // Only today's doses are markable.
+              trailing: isToday
+                  ? TakenCheckbox(
+                      taken: state.isTaken(m.id),
+                      onToggle: () => state.toggleTaken(m.id),
+                    )
+                  : null,
             ),
           ),
       ],
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+
+  DateTime? _earliestStart(List<Medication> meds) {
+    DateTime? earliest;
+    for (final m in meds) {
+      final d = DateTime(m.startedAt.year, m.startedAt.month, m.startedAt.day);
+      if (earliest == null || d.isBefore(earliest)) earliest = d;
+    }
+    return earliest;
+  }
+
+  bool _startedOnOrBefore(DateTime startedAt, DateTime day) {
+    final a = DateTime(startedAt.year, startedAt.month, startedAt.day);
+    final b = DateTime(day.year, day.month, day.day);
+    return !a.isAfter(b);
+  }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  int _monthKey(DateTime d) => d.year * 12 + d.month;
 }

@@ -242,4 +242,123 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get cancel => 'Cancelar';
+
+  @override
+  String get profile => 'Perfil';
+
+  @override
+  String get language => 'Idioma';
+
+  @override
+  String get languageSystem => 'Padrão do sistema';
+
+  @override
+  String get languageEnglish => 'Inglês';
+
+  @override
+  String get languagePortuguese => 'Português';
+
+  @override
+  String get notifications => 'Notificações';
+
+  @override
+  String get notificationsComingSoon =>
+      'Configurações de notificações em breve';
+
+  @override
+  String get account => 'Conta';
+
+  @override
+  String get about => 'Sobre';
+
+  @override
+  String get aboutBody => 'Certo — lembretes de medicamentos descomplicados.';
+
+  @override
+  String get editName => 'Editar nome';
+
+  @override
+  String get save => 'Salvar';
+
+  @override
+  String get nameSaved => 'Nome salvo ✓';
+
+  @override
+  String get medicationName => 'Nome do medicamento';
+
+  @override
+  String get medicationNameHint => 'ex.: Amoxicilina 500mg';
+
+  @override
+  String get dosageHint => 'ex.: 1 comprimido';
+
+  @override
+  String get instruction => 'Instrução';
+
+  @override
+  String get instructionHint => 'ex.: Após a refeição';
+
+  @override
+  String get category => 'Categoria';
+
+  @override
+  String get categoryHint => 'ex.: Antibiótico · Comprimido oral';
+
+  @override
+  String get notesHint => 'Observações opcionais';
+
+  @override
+  String get times => 'Horários';
+
+  @override
+  String get addTime => 'Adicionar horário';
+
+  @override
+  String get pillColor => 'Cor do comprimido';
+
+  @override
+  String get saveMedication => 'Salvar medicamento';
+
+  @override
+  String get medicationSaved => 'Medicamento salvo ✓';
+
+  @override
+  String get fillRequired => 'Informe o nome do medicamento.';
+
+  @override
+  String get addAtLeastOneTime => 'Adicione pelo menos um horário.';
+
+  @override
+  String get missedDose => 'Medicamento em atraso';
+
+  @override
+  String wasDueAt(String time) {
+    return 'era para $time';
+  }
+
+  @override
+  String get noMedicationsTitle => 'Nenhum medicamento ainda';
+
+  @override
+  String get noMedicationsBody =>
+      'Adicione seu primeiro medicamento para começar.';
+
+  @override
+  String get noActiveMedicationsTitle => 'Nenhum medicamento ativo';
+
+  @override
+  String get noActiveMedicationsBody =>
+      'Os medicamentos que você toma agora aparecerão aqui.';
+
+  @override
+  String get emptyFilterTitle => 'Nada por aqui';
+
+  @override
+  String get emptyFilterBody => 'Nenhum medicamento corresponde a este filtro.';
+
+  @override
+  String get noScheduleTitle => 'Nada agendado';
+
+  @override
+  String get noScheduleBody => 'Nenhum medicamento agendado para este dia.';
 }

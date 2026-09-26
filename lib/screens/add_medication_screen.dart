@@ -11,6 +11,7 @@ import '../widgets/app_card.dart';
 import '../widgets/circle_icon_button.dart';
 import '../widgets/icon_badge.dart';
 import '../widgets/pill_icon.dart';
+import 'manual_medication_form_screen.dart';
 import 'medication_detail_screen.dart';
 
 /// Entry point for adding a medication (scan or manual).
@@ -39,7 +40,10 @@ class AddMedicationScreen extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Center(
-                      child: Text(l10n.addMedication, style: AppTheme.headerMedium),
+                      child: Text(
+                        l10n.addMedication,
+                        style: AppTheme.headerMedium,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 56),
@@ -61,7 +65,11 @@ class AddMedicationScreen extends StatelessWidget {
                     icon: Icons.edit_outlined,
                     title: l10n.addManually,
                     subtitle: l10n.addManuallySubtitle,
-                    onTap: () => showComingSoon(context, l10n.manualComingSoon),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const ManualMedicationFormScreen(),
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 28),
                   Text(l10n.recent, style: AppTheme.sectionLabel),
@@ -78,10 +86,7 @@ class AddMedicationScreen extends StatelessWidget {
                         ),
                         child: Row(
                           children: [
-                            PillIcon(
-                              colorIndex: m.pillColorIndex,
-                              size: 44,
-                            ),
+                            PillIcon(colorIndex: m.pillColorIndex, size: 44),
                             const SizedBox(width: 14),
                             Expanded(
                               child: Column(

@@ -23,13 +23,16 @@ class CertoApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => AppState(),
-      child: MaterialApp(
-        title: 'Certo',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        home: const _Root(),
+      child: Consumer<AppState>(
+        builder: (context, state, _) => MaterialApp(
+          title: 'Certo',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          locale: state.localeOverride,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const _Root(),
+        ),
       ),
     );
   }
