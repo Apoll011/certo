@@ -1591,7 +1591,7 @@ class _AskBanner extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Certo asks',
+            'Verifi asks',
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,

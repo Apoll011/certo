@@ -1202,7 +1202,7 @@ class _ChatRow extends StatelessWidget {
     final align =
         bubble.isUser ? Alignment.centerRight : Alignment.centerLeft;
     final color = bubble.isUser ? _VC.userBubble : _VC.aiBubble;
-    final label = bubble.isUser ? 'You' : 'Certo';
+    final label = bubble.isUser ? 'You' : 'Verifi';
     final hasText = bubble.text.trim().isNotEmpty;
     final hasCards = bubble.attachments.isNotEmpty;
 

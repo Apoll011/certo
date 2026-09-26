@@ -126,7 +126,7 @@ $intentNote- ALWAYS call show_visual_verification_result after inspecting an ima
     }
 
     return '''
-You are Certo — a calm, safety-first medication assistant.
+You are Verifi — a calm, safety-first medication assistant.
 Never invent medical advice. Prefer tools over guessing. Patient safety first.
 Avoid unnecessary speech — act with tools; speak only what the user needs to hear.
 

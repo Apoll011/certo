@@ -3,10 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../widgets/circle_icon_button.dart';
-import '../widgets/pill_icon.dart';
 import '../widgets/primary_button.dart';
 
 /// Email/password sign-in and sign-up.
@@ -74,20 +72,11 @@ class _AuthScreenState extends State<AuthScreen> {
                     children: [
                       const SizedBox(height: AppSpacing.sm),
                       Center(
-                        child: Container(
-                          width: 88,
-                          height: 88,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: scheme.primaryContainer,
-                          ),
-                          child: const Center(
-                            child: PillIcon(
-                              size: 44,
-                              color1: Colors.white,
-                              color2: AppColors.primarySoft,
-                            ),
-                          ),
+                        child: Image.asset(
+                          'assets/wordmark.png',
+                          width: 180,
+                          fit: BoxFit.contain,
+                          semanticLabel: 'Verifi',
                         ),
                       ),
                       const SizedBox(height: AppSpacing.xxl),
