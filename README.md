@@ -51,8 +51,16 @@ is authenticated it loads medications from Supabase; otherwise it falls back to
 
 ## Configuration
 
-Inject the Supabase project's **publishable (anon)** key at build time. These
-are safe to ship in the client — RLS enforces access.
+The app reads Supabase credentials from `String.fromEnvironment`. The simplest
+way to supply them is a gitignored `.env` file injected with
+`--dart-define-from-file`:
+
+```sh
+cp .env.example .env    # then edit with your project's values
+flutter run --dart-define-from-file=.env
+```
+
+Or pass them directly:
 
 ```sh
 flutter run \
@@ -60,6 +68,7 @@ flutter run \
   --dart-define=SUPABASE_ANON_KEY=<anon/publishable key>
 ```
 
+The anon/publishable key is safe to ship in the client — RLS enforces access.
 Never put the `service_role` key, database password, or any private secret in
 the app. Secret-requiring work belongs in Supabase Edge Functions later.
 
@@ -108,10 +117,11 @@ app shows "Check your email to confirm your account." after sign-up.
 
 ```sh
 flutter pub get
+cp .env.example .env  # first time only; then fill in your Supabase values
 flutter gen-l10n      # only after editing lib/l10n/*.arb
 flutter analyze
 flutter test
-flutter run           # add --dart-define for a real Supabase project
+flutter run --dart-define-from-file=.env
 ```
 
 ## Design tokens

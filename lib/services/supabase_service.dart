@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../config/app_config.dart';
@@ -15,8 +16,10 @@ class SupabaseService {
       AppConfig.supabaseUrl.isNotEmpty && AppConfig.supabaseAnonKey.isNotEmpty;
 
   static Future<void> initialize() async {
+        debugPrint("Initializing Supabase!");
     if (_initialized) return;
     if (!isConfigured) return;
+    debugPrint("Initialized Supabase!");
     await Supabase.initialize(
       url: AppConfig.supabaseUrl,
       publishableKey: AppConfig.supabaseAnonKey,
