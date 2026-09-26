@@ -140,52 +140,45 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xxl),
-                  _sectionLabel(context, 'Caregiver'),
+                  _sectionLabel(context, 'Sharing'),
                   AppCard(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: SwitchListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 4,
-                      ),
-                      title: Text(
-                        'Show Caregiver tab',
-                        style: textTheme.titleMedium,
-                      ),
-                      subtitle: Text(
-                        state.showCaregiverTab
-                            ? 'On — Sharing tab in the bottom bar'
-                            : 'Off — Settings replaces it in the bottom bar',
-                        style: textTheme.bodySmall,
-                      ),
-                      value: state.showCaregiverTab,
-                      onChanged: (v) => state.setShowCaregiverTab(v),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  AppCard(
-                    onTap: () {
-                      if (state.showCaregiverTab) {
-                        state.setTab(3);
-                        if (Navigator.of(context).canPop()) {
-                          Navigator.of(context).pop();
-                        }
-                      } else {
-                        Navigator.of(context).push(
-                          MaterialPageRoute<void>(
-                            builder: (_) => const CaregiverScreen(),
-                          ),
-                        );
-                      }
-                    },
+                    onTap: () => _openSharing(context, state),
                     child: Row(
                       children: [
-                        Icon(Icons.share_outlined, color: scheme.onSurface),
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: scheme.primaryContainer.withValues(
+                              alpha: 0.65,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.people_outline_rounded,
+                            color: scheme.primary,
+                            size: 22,
+                          ),
+                        ),
                         const SizedBox(width: 14),
                         Expanded(
-                          child: Text(
-                            'Invite & sharing',
-                            style: textTheme.titleMedium,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Invites & connections',
+                                style: textTheme.titleMedium,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                state.showCaregiverTab
+                                    ? 'Open Sharing — create codes and manage who can see you'
+                                    : 'Create codes, redeem invites, and see your connections',
+                                style: textTheme.bodySmall?.copyWith(
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         Icon(
@@ -194,6 +187,28 @@ class SettingsScreen extends StatelessWidget {
                           size: 26,
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  AppCard(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      title: Text(
+                        'Show in bottom bar',
+                        style: textTheme.titleMedium,
+                      ),
+                      subtitle: Text(
+                        state.showCaregiverTab
+                            ? 'On — Sharing tab visible'
+                            : 'Off — open Sharing from here instead',
+                        style: textTheme.bodySmall,
+                      ),
+                      value: state.showCaregiverTab,
+                      onChanged: (v) => state.setShowCaregiverTab(v),
                     ),
                   ),
                   if (state.isAuthenticated) ...[
@@ -242,6 +257,22 @@ class SettingsScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Opens Sharing / caregiver — via the tab when visible, otherwise as a page.
+  void _openSharing(BuildContext context, AppState state) {
+    if (state.showCaregiverTab) {
+      state.setTab(3);
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const CaregiverScreen(),
       ),
     );
   }
