@@ -9,8 +9,11 @@ import '../data/medication_repository.dart';
 import '../data/mock_data.dart';
 import '../data/profile_repository.dart';
 import '../models/medication.dart';
+import '../config/app_config.dart';
+import '../ai/ai.dart';
 import '../services/alarm_service.dart';
 import '../services/supabase_service.dart';
+
 
 enum AuthStatus { loading, signedOut, signedIn }
 
@@ -63,6 +66,36 @@ class AppState extends ChangeNotifier {
   MedicationRepository? _medsRepo;
   ProfileRepository? _profileRepo;
   bool _bootstrapped = false;
+  AiToolRegistry? _aiToolRegistry;
+
+  /// Internal MCP & OpenAI Tool Registry providing access to all medication tools.
+  AiToolRegistry get aiToolRegistry {
+    return _aiToolRegistry ??= AiToolRegistry.withMedicationTools(this);
+  }
+
+  /// Factory to instantiate an OpenAI / DeepSeek compatible assistant service.
+  AiAssistantService createAiAssistant({
+    String? apiKey,
+    String? baseUrl,
+    String? model,
+  }) {
+    final client = OpenAiCompatibleClient(
+      apiKey: apiKey ?? AppConfig.aiApiKey,
+      baseUrl: (baseUrl != null && baseUrl.isNotEmpty)
+          ? baseUrl
+          : AppConfig.aiBaseUrl,
+      model: (model != null && model.isNotEmpty) ? model : AppConfig.aiModel,
+    );
+    return AiAssistantService(
+      client: client,
+      tools: aiToolRegistry,
+      systemPromptProvider: () => AiAssistantService.defaultSystemPrompt(
+        userName: userName,
+        now: DateTime.now(),
+      ),
+    );
+  }
+
 
   Medication? medicationById(String id) {
     for (final m in medications) {

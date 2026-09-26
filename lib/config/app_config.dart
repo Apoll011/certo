@@ -38,4 +38,23 @@ class AppConfig {
 
   /// ElevenLabs STT model: Scribe v2 Realtime.
   static const String elevenLabsSttModel = 'scribe_v2_realtime';
+
+  // ── AI Assistant (OpenAI / DeepSeek compatible) ───────────────────────────
+  /// AI API key (e.g. DeepSeek or OpenAI). Pass via --dart-define=AI_API_KEY=...
+  static const String aiApiKey = String.fromEnvironment('AI_API_KEY');
+
+  /// AI API base URL. Defaults to DeepSeek endpoint 'https://api.deepseek.com'.
+  /// Override via --dart-define=AI_BASE_URL=...
+  static const String aiBaseUrl = String.fromEnvironment(
+    'AI_BASE_URL',
+    defaultValue: 'https://api.deepseek.com',
+  );
+
+  /// AI Model name. Defaults to 'deepseek-chat'.
+  /// Override via --dart-define=AI_MODEL=...
+  static const String aiModel = String.fromEnvironment(
+    'AI_MODEL',
+    defaultValue: 'deepseek-chat',
+  );
 }
+
