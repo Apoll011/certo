@@ -482,6 +482,20 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       _canAdd = data.canAdd;
       _canConfirm = data.canConfirm;
     });
+
+    // Persist verification outcomes for caregiver heatmaps.
+    final appState = Provider.of<AppState>(context, listen: false);
+    final med = findMedication(
+      appState,
+      name: _identifiedName.isNotEmpty ? _identifiedName : _expectedName,
+    );
+    if (med != null) {
+      if (data.status == VisualVerificationStatus.confirmedMismatch) {
+        appState.logVerification(med.id, 'mismatch');
+      } else if (data.status == VisualVerificationStatus.uncertain) {
+        appState.logVerification(med.id, 'uncertain');
+      }
+    }
   }
 
   void _onAssistantEvent(AiAssistantEvent event) {

@@ -28,6 +28,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isSignUp = false;
   bool _loading = false;
   bool _obscurePassword = true;
+  bool _signUpAsCaregiver = false;
   String? _message;
 
   @override
@@ -108,6 +109,23 @@ class _AuthScreenState extends State<AuthScreen> {
                           label: l10n.nameLabel,
                           hint: l10n.nameHint,
                           icon: Icons.person_outline_rounded,
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: _signUpAsCaregiver,
+                          onChanged: (v) => setState(
+                            () => _signUpAsCaregiver = v ?? false,
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: Text(
+                            'I\'m a caregiver',
+                            style: textTheme.titleSmall,
+                          ),
+                          subtitle: Text(
+                            'Family or professional — you can watch someone\'s adherence with their consent.',
+                            style: textTheme.bodySmall,
+                          ),
                         ),
                         const SizedBox(height: AppSpacing.md),
                       ],
@@ -228,7 +246,12 @@ class _AuthScreenState extends State<AuthScreen> {
     });
     final state = context.read<AppState>();
     final result = _isSignUp
-        ? await state.signUp(email, password, _nameController.text)
+        ? await state.signUp(
+            email,
+            password,
+            _nameController.text,
+            asCaregiver: _signUpAsCaregiver,
+          )
         : await state.signIn(email, password);
     if (!mounted) return;
     setState(() {

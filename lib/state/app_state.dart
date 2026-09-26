@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../data/caregiver_repository.dart';
 import '../data/medication_repository.dart';
 import '../data/mock_data.dart';
 import '../data/profile_repository.dart';
+import '../models/caregiver.dart';
 import '../models/dose_log_entry.dart';
 import '../models/medication.dart';
 import '../config/app_config.dart';
@@ -51,6 +53,19 @@ class AppState extends ChangeNotifier {
   String userName = demoUserName;
   int selectedTabIndex = 0;
 
+  /// Whether this account is a caregiver (family or professional).
+  bool isCaregiver = false;
+  String role = 'individual';
+
+  /// Active people I care for (when [isCaregiver]).
+  final List<CaregiverLink> careRecipients = [];
+
+  /// Links where I am the patient (invites + caregivers watching me).
+  final List<CaregiverLink> grantedCareLinks = [];
+
+  /// Cached snapshots keyed by link id.
+  final Map<String, CareRecipientSnapshot> careSnapshots = {};
+
   AuthStatus authStatus;
   User? _user;
 
@@ -71,6 +86,7 @@ class AppState extends ChangeNotifier {
   StreamSubscription<AuthState>? _authSub;
   MedicationRepository? _medsRepo;
   ProfileRepository? _profileRepo;
+  CaregiverRepository? _caregiverRepo;
   bool _bootstrapped = false;
   AiToolRegistry? _aiToolRegistry;
 
@@ -193,6 +209,7 @@ class AppState extends ChangeNotifier {
     final client = SupabaseService.client;
     _medsRepo = MedicationRepository(client);
     _profileRepo = ProfileRepository(client);
+    _caregiverRepo = CaregiverRepository(client);
 
     _authSub = client.auth.onAuthStateChange.listen((event) {
       final session = event.session;
@@ -235,13 +252,20 @@ class AppState extends ChangeNotifier {
     final uid = _user?.id;
     if (uid == null) return;
     try {
-      final name = await _profileRepo?.fetchName(uid);
-      if (name != null && name.isNotEmpty) userName = name;
+      final profile = await _profileRepo?.fetchProfile(uid);
+      if (profile != null) {
+        final name = profile['name'] as String?;
+        if (name != null && name.isNotEmpty) userName = name;
+        isCaregiver = profile['is_caregiver'] as bool? ?? false;
+        role = profile['role']?.toString() ??
+            (isCaregiver ? 'family_caregiver' : 'individual');
+      }
       final meds = await _medsRepo?.fetchAll();
       medications
         ..clear()
         ..addAll(meds ?? const []);
       await refreshDoseHistory();
+      await refreshCaregiverData();
     } catch (e) {
       debugPrint('Verifi: failed to load data — $e');
     }
@@ -254,6 +278,11 @@ class AppState extends ChangeNotifier {
     userName = _prefs?.getString(_kNamePref) ?? demoUserName;
     // Don't clear takenIds here — restored from prefs after seed / on bootstrap.
     doseHistory.clear();
+    careRecipients.clear();
+    grantedCareLinks.clear();
+    careSnapshots.clear();
+    isCaregiver = _prefs?.getBool('is_caregiver_local') ?? false;
+    role = isCaregiver ? 'family_caregiver' : 'individual';
   }
 
   /// Local calendar day key (yyyy-MM-dd) for "taken today" persistence.
@@ -343,12 +372,21 @@ class AppState extends ChangeNotifier {
   }
 
   /// Returns an error message, a confirmation notice, or null on success.
-  Future<String?> signUp(String email, String password, String name) async {
+  Future<String?> signUp(
+    String email,
+    String password,
+    String name, {
+    bool asCaregiver = false,
+  }) async {
     try {
       final res = await SupabaseService.client.auth.signUp(
         email: email.trim(),
         password: password,
-        data: {'name': name.trim()},
+        data: {
+          'name': name.trim(),
+          'is_caregiver': asCaregiver,
+          'role': asCaregiver ? 'family_caregiver' : 'individual',
+        },
       );
       // With email confirmation enabled, signUp returns no session yet.
       if (res.session == null) return 'confirmation-required';
@@ -561,7 +599,7 @@ class AppState extends ChangeNotifier {
   void logVerification(String id, String action) {
     if (action != 'mismatch' && action != 'uncertain') return;
     _logDoseLocally(id, action);
-    _recordDose(id, action);
+    unawaited(_recordDose(id, action));
     notifyListeners();
   }
 
@@ -614,14 +652,19 @@ class AppState extends ChangeNotifier {
   }
 
   /// Loads recent dose events from Supabase into [doseHistory] when signed in.
-  Future<void> refreshDoseHistory({int limit = 50}) async {
+  Future<void> refreshDoseHistory({int limit = 100}) async {
     final uid = _user?.id;
     if (uid == null || !SupabaseService.isConfigured) return;
     try {
+      final since = DateTime.now()
+          .toUtc()
+          .subtract(const Duration(days: 40))
+          .toIso8601String();
       final rows = await SupabaseService.client
           .from('dose_events')
           .select('id, medication_id, action, created_at')
           .eq('user_id', uid)
+          .gte('created_at', since)
           .order('created_at', ascending: false)
           .limit(limit);
       final list = <DoseLogEntry>[];
@@ -643,7 +686,6 @@ class AppState extends ChangeNotifier {
       doseHistory
         ..clear()
         ..addAll(list);
-      // Restore today's checkmarks from server history (prefs as fallback).
       if (list.isNotEmpty) {
         _rebuildTakenIdsFromHistory();
       } else {
@@ -669,6 +711,139 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       debugPrint('Verifi: record dose failed — $e');
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Caregiver mode
+  // ---------------------------------------------------------------------------
+
+  Future<void> setCaregiverMode(bool enabled, {String? roleOverride}) async {
+    isCaregiver = enabled;
+    role = roleOverride ?? (enabled ? 'family_caregiver' : 'individual');
+    await _prefs?.setBool('is_caregiver_local', enabled);
+    final uid = _user?.id;
+    final repo = _profileRepo;
+    if (isAuthenticated && uid != null && repo != null) {
+      try {
+        await repo.updateCaregiverFlag(
+          userId: uid,
+          isCaregiver: enabled,
+          role: role,
+        );
+      } catch (e) {
+        debugPrint('Verifi: update caregiver flag failed — $e');
+      }
+    }
+    if (enabled) {
+      await refreshCaregiverData();
+    } else {
+      careRecipients.clear();
+      careSnapshots.clear();
+    }
+    notifyListeners();
+  }
+
+  Future<void> refreshCaregiverData() async {
+    final repo = _caregiverRepo;
+    if (!isAuthenticated || repo == null) return;
+    try {
+      final granted = await repo.fetchMyGrantedLinks();
+      grantedCareLinks
+        ..clear()
+        ..addAll(granted);
+
+      if (isCaregiver) {
+        final recipients = await repo.fetchMyCareRecipients();
+        careRecipients
+          ..clear()
+          ..addAll(recipients);
+        for (final link in List<CaregiverLink>.of(careRecipients)) {
+          try {
+            final snap = await repo.loadRecipientSnapshot(link);
+            careSnapshots[link.id] = snap;
+          } catch (e) {
+            debugPrint('Verifi: recipient snapshot failed — $e');
+          }
+        }
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Verifi: refresh caregiver data failed — $e');
+    }
+  }
+
+  Future<CaregiverLink?> createCaregiverInvite() async {
+    final repo = _caregiverRepo;
+    if (!isAuthenticated || repo == null) return null;
+    try {
+      final link = await repo.createInvite();
+      await refreshCaregiverData();
+      return link;
+    } catch (e) {
+      debugPrint('Verifi: create invite failed — $e');
+      rethrow;
+    }
+  }
+
+  Future<void> revokeCaregiverAccess(String linkId) async {
+    final repo = _caregiverRepo;
+    if (repo == null) return;
+    await repo.revokeLink(linkId);
+    await refreshCaregiverData();
+  }
+
+  Future<CaregiverLink> redeemCaregiverInvite({
+    required String code,
+    String label = '',
+  }) async {
+    final repo = _caregiverRepo;
+    if (!isAuthenticated || repo == null) {
+      throw StateError('Sign in to add someone');
+    }
+    if (!isCaregiver) {
+      await setCaregiverMode(true);
+    }
+    final link = await repo.redeemInvite(code: code, label: label);
+    await refreshCaregiverData();
+    return link;
+  }
+
+  Future<CareRecipientSnapshot?> loadCareRecipient(String linkId) async {
+    final repo = _caregiverRepo;
+    if (repo == null) return careSnapshots[linkId];
+    CaregiverLink? link;
+    for (final l in careRecipients) {
+      if (l.id == linkId) {
+        link = l;
+        break;
+      }
+    }
+    if (link == null) return null;
+    final snap = await repo.loadRecipientSnapshot(link);
+    careSnapshots[linkId] = snap;
+    notifyListeners();
+    return snap;
+  }
+
+  Future<void> markTakenForPatient({
+    required String patientId,
+    required String medicationId,
+    required String linkId,
+  }) async {
+    final repo = _caregiverRepo;
+    if (repo == null) return;
+    await repo.recordDoseForPatient(
+      patientId: patientId,
+      medicationId: medicationId,
+      action: 'taken',
+    );
+    await loadCareRecipient(linkId);
+  }
+
+  Future<void> updateCareRecipientLabel(String linkId, String label) async {
+    final repo = _caregiverRepo;
+    await repo?.updateRecipientLabel(linkId, label);
+    await refreshCaregiverData();
   }
 
   void setTab(int index) {

@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../state/app_state.dart';
 import 'ai_tool.dart';
+import 'caregiver_tools.dart';
 import 'medication_tools.dart';
 import 'ui_tools.dart';
 import 'vision_tools.dart';
@@ -35,6 +36,10 @@ class AiToolRegistry {
       SkipMedicationTool(state),
       ReadInstructionsTool(state),
       GetTodayScheduleTool(state, clock: clock),
+      ListCareRecipientsTool(state),
+      GetCareAdherenceTool(state),
+      CreateCaregiverInviteTool(state),
+      RedeemCaregiverInviteTool(state),
     ]);
     return registry;
   }

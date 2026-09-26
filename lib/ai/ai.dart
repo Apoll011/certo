@@ -5,6 +5,7 @@ export 'ai_assistant_service.dart';
 export 'models/chat_message.dart';
 export 'openai_client.dart';
 export 'tools/ai_tool.dart';
+export 'tools/caregiver_tools.dart';
 export 'tools/medication_tools.dart';
 export 'tools/tool_registry.dart';
 export 'tools/ui_tools.dart';

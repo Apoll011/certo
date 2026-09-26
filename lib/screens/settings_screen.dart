@@ -136,6 +136,54 @@ class SettingsScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+                  const SizedBox(height: AppSpacing.xxl),
+                  _sectionLabel(context, 'Caregiver'),
+                  AppCard(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: SwitchListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      title: Text(
+                        'Caregiver mode',
+                        style: textTheme.titleMedium,
+                      ),
+                      subtitle: Text(
+                        state.isCaregiver
+                            ? 'On — you can support people who share an invite with you'
+                            : 'Off — enable to add people you care for',
+                        style: textTheme.bodySmall,
+                      ),
+                      value: state.isCaregiver,
+                      onChanged: (v) => state.setCaregiverMode(v),
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.sm),
+                  AppCard(
+                    onTap: () {
+                      // Jump to Caregiver tab sharing sheet via tab index 3.
+                      state.setTab(3);
+                      Navigator.of(context).pop();
+                    },
+                    child: Row(
+                      children: [
+                        Icon(Icons.share_outlined, color: scheme.onSurface),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            'Sharing & consent',
+                            style: textTheme.titleMedium,
+                          ),
+                        ),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: scheme.onSurfaceVariant,
+                          size: 26,
+                        ),
+                      ],
+                    ),
+                  ),
                   if (state.isAuthenticated) ...[
                     const SizedBox(height: AppSpacing.xxl),
                     _sectionLabel(context, l10n.account),
