@@ -6,6 +6,7 @@ import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/schedule.dart';
 import '../utils/ui.dart';
 import '../widgets/app_card.dart';
 import '../widgets/circle_icon_button.dart';
@@ -99,7 +100,9 @@ class MedicationDetailScreen extends StatelessWidget {
                         _detailRow(
                           icon: Icons.schedule_rounded,
                           label: l10n.scheduleLabel,
-                          value: med.timesLine,
+                          value:
+                              '${displayTimes(med.times, l10n)}\n'
+                              '${med.frequencyDays == 1 ? l10n.everyDay : l10n.everyNDays(med.frequencyDays)}',
                         ),
                         const _Divider(),
                         _detailRow(

@@ -7,13 +7,24 @@ Supabase (Auth + Postgres + Row Level Security), built from `idea.md`.
 
 Implemented (UI shell):
 - Onboarding
-- Home — today's checklist with notification banner and "mark as taken"
-- My Medications — list with All/Active/Paused/Finished filters
-- Add Medication — scan/manual entry point (+ recent list)
-- Medication Detail — dosage, schedule, started date, notes
-- Schedule — 7-day strip + Morning/Afternoon/Evening sections
-- Medication Alarm — lock-screen style overlay
+- Home — today's checklist (frequency-aware), expandable "due now" reminder
+  with take-now / snooze actions, and empty states
+- My Medications — list with All/Active/Paused/Finished filters + empty states
+- Add Medication — manual form (name, dosage, instruction, times incl. meal
+  anchors, frequency, pill color) + scan stub
+- Medication Detail — dosage, schedule, frequency, started date, notes
+- Schedule — single-line day strip with month separators (unbounded into the
+  past, +2 months ahead) + Morning/Afternoon/Evening sections
+- Settings — language (EN/PT), profile name, sign out
+- Medication Alarm — full-screen clock-style UI triggered by OS notifications
 - Bottom tab bar with center mic FAB
+
+Schedule & alarms:
+- Recurrence: every N days (`frequency_days`), plus meal anchors
+  ("after breakfast/lunch/dinner") that resolve to 08:00 / 14:00 / 20:00.
+- OS-level alarms via `flutter_local_notifications`: doses ring as
+  notifications with sound + full-screen intent, and "snooze" reschedules a
+  one-off reminder.
 
 Supabase backend:
 - Email/password auth (sign in / sign up) with session restore + sign out
@@ -30,6 +41,7 @@ Deferred (stubbed): Voice mode, Camera/scan flow, Caregiver.
 - Flutter (Material 3)
 - [provider](https://pub.dev/packages/provider) for state
 - [supabase_flutter](https://pub.dev/packages/supabase_flutter) for auth + data
+- [flutter_local_notifications](https://pub.dev/packages/flutter_local_notifications) for OS alarms
 - `flutter_localizations` + `intl` for English/Portuguese (follows the system locale)
 
 ## Architecture

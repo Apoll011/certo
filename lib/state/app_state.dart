@@ -9,6 +9,7 @@ import '../data/medication_repository.dart';
 import '../data/mock_data.dart';
 import '../data/profile_repository.dart';
 import '../models/medication.dart';
+import '../services/alarm_service.dart';
 import '../services/supabase_service.dart';
 
 enum AuthStatus { loading, signedOut, signedIn }
@@ -33,6 +34,9 @@ class AppState extends ChangeNotifier {
 
   /// Medication ids marked as taken for today.
   final Set<String> takenIds = {};
+
+  /// Medication ids snoozed until a given time (in-app, mirroring the OS alarm).
+  final Map<String, DateTime> _snoozedUntil = {};
 
   String userName = demoUserName;
   int selectedTabIndex = 0;
@@ -76,6 +80,17 @@ class AppState extends ChangeNotifier {
 
   bool isTaken(String id) => takenIds.contains(id);
 
+  /// When the medication is snoozed until, or null if not currently snoozed.
+  DateTime? snoozedUntilFor(String id) {
+    final until = _snoozedUntil[id];
+    if (until == null) return null;
+    if (until.isBefore(DateTime.now())) {
+      _snoozedUntil.remove(id);
+      return null;
+    }
+    return until;
+  }
+
   // ---------------------------------------------------------------------------
   // Bootstrap / session lifecycle
   // ---------------------------------------------------------------------------
@@ -98,6 +113,7 @@ class AppState extends ChangeNotifier {
     if (!SupabaseService.isConfigured) {
       authStatus = AuthStatus.signedOut;
       notifyListeners();
+      await _syncAlarms();
       return;
     }
 
@@ -132,6 +148,7 @@ class AppState extends ChangeNotifier {
     await _refreshData();
     authStatus = AuthStatus.signedIn;
     notifyListeners();
+    await _syncAlarms();
   }
 
   void _onSignedOut() {
@@ -162,6 +179,15 @@ class AppState extends ChangeNotifier {
       ..addAll(mockMedications);
     userName = _prefs?.getString(_kNamePref) ?? demoUserName;
     takenIds.clear();
+  }
+
+  /// Rebuilds the OS alarm schedule from the current medication list.
+  Future<void> _syncAlarms() async {
+    try {
+      await AlarmService.syncMedications(medications);
+    } catch (e) {
+      debugPrint('Certo: alarm sync failed — $e');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -255,6 +281,7 @@ class AppState extends ChangeNotifier {
         final created = await repo.create(m);
         medications.insert(0, created);
         notifyListeners();
+        await _syncAlarms();
         return created;
       } catch (e) {
         debugPrint('Certo: create medication failed — $e');
@@ -262,6 +289,7 @@ class AppState extends ChangeNotifier {
     }
     medications.insert(0, m);
     notifyListeners();
+    await _syncAlarms();
     return m;
   }
 
@@ -273,6 +301,7 @@ class AppState extends ChangeNotifier {
         final i = medications.indexWhere((x) => x.id == m.id);
         if (i >= 0) medications[i] = updated;
         notifyListeners();
+        await _syncAlarms();
         return;
       } catch (e) {
         debugPrint('Certo: update medication failed — $e');
@@ -281,6 +310,7 @@ class AppState extends ChangeNotifier {
     final i = medications.indexWhere((x) => x.id == m.id);
     if (i >= 0) medications[i] = m;
     notifyListeners();
+    await _syncAlarms();
   }
 
   Future<void> deleteMedication(String id) async {
@@ -294,7 +324,29 @@ class AppState extends ChangeNotifier {
     }
     medications.removeWhere((m) => m.id == id);
     takenIds.remove(id);
+    _snoozedUntil.remove(id);
     notifyListeners();
+    await _syncAlarms();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Snooze
+  // ---------------------------------------------------------------------------
+
+  /// Snoozes a medication's alarm for [minutes] (default 10) and schedules a
+  /// matching one-off OS notification.
+  Future<void> snooze(String medicationId, {int minutes = 10}) async {
+    final med = medicationById(medicationId);
+    if (med == null) return;
+    _snoozedUntil[medicationId] = DateTime.now().add(
+      Duration(minutes: minutes),
+    );
+    notifyListeners();
+    try {
+      await AlarmService.snooze(med, med.times.first, minutes);
+    } catch (e) {
+      debugPrint('Certo: snooze schedule failed — $e');
+    }
   }
 
   // ---------------------------------------------------------------------------

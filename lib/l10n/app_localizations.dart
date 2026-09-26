@@ -751,6 +751,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'No medications scheduled for this day.'**
   String get noScheduleBody;
+
+  /// No description provided for @mealBreakfast.
+  ///
+  /// In en, this message translates to:
+  /// **'After breakfast'**
+  String get mealBreakfast;
+
+  /// No description provided for @mealLunch.
+  ///
+  /// In en, this message translates to:
+  /// **'After lunch'**
+  String get mealLunch;
+
+  /// No description provided for @mealDinner.
+  ///
+  /// In en, this message translates to:
+  /// **'After dinner'**
+  String get mealDinner;
+
+  /// No description provided for @frequency.
+  ///
+  /// In en, this message translates to:
+  /// **'Frequency'**
+  String get frequency;
+
+  /// No description provided for @everyDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Every day'**
+  String get everyDay;
+
+  /// No description provided for @everyNDays.
+  ///
+  /// In en, this message translates to:
+  /// **'Every {n} days'**
+  String everyNDays(int n);
+
+  /// No description provided for @takeNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Take now'**
+  String get takeNow;
+
+  /// No description provided for @nothingDueToday.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing due today'**
+  String get nothingDueToday;
+
+  /// No description provided for @nothingDueTodayBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You have no doses scheduled for today.'**
+  String get nothingDueTodayBody;
 }
 
 class _AppLocalizationsDelegate

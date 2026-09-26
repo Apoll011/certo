@@ -124,5 +124,15 @@
   "emptyFilterTitle": "Nada por aqui",
   "emptyFilterBody": "Nenhum medicamento corresponde a este filtro.",
   "noScheduleTitle": "Nada agendado",
-  "noScheduleBody": "Nenhum medicamento agendado para este dia."
+  "noScheduleBody": "Nenhum medicamento agendado para este dia.",
+
+  "mealBreakfast": "Após o café da manhã",
+  "mealLunch": "Após o almoço",
+  "mealDinner": "Após o jantar",
+  "frequency": "Frequência",
+  "everyDay": "Todos os dias",
+  "everyNDays": "A cada {n} dias",
+  "takeNow": "Tomar agora",
+  "nothingDueToday": "Nada para hoje",
+  "nothingDueTodayBody": "Você não tem doses agendadas para hoje."
 }

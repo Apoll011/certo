@@ -6,6 +6,7 @@ import '../models/medication.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
+import '../utils/schedule.dart';
 import '../widgets/circle_icon_button.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/medication_card.dart';
@@ -100,7 +101,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                       Text(m.dosageLine, style: AppTheme.bodyMedium),
                       const SizedBox(height: 5),
                       Text(
-                        m.timesLine,
+                        displayTimes(m.times, l10n),
                         style: const TextStyle(
                           color: AppColors.primary,
                           fontWeight: FontWeight.w700,

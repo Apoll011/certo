@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'l10n/app_localizations.dart';
+import 'screens/alarm_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/onboarding_screen.dart';
+import 'services/alarm_service.dart';
 import 'services/supabase_service.dart';
 import 'state/app_state.dart';
 import 'theme/app_colors.dart';
@@ -13,6 +15,7 @@ import 'theme/app_theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseService.initialize();
+  await AlarmService.init();
   runApp(const CertoApp());
 }
 
@@ -31,6 +34,7 @@ class CertoApp extends StatelessWidget {
           locale: state.localeOverride,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
+          navigatorKey: AlarmService.navigatorKey,
           home: const _Root(),
         ),
       ),
@@ -55,9 +59,20 @@ class _RootState extends State<_Root> {
     super.initState();
     _state = context.read<AppState>();
     _state.addListener(_onAppStateChanged);
+    AlarmService.onOpenAlarm = _openAlarm;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _state.bootstrap();
     });
+  }
+
+  void _openAlarm(String medicationId, String? time) {
+    final med = _state.medicationById(medicationId);
+    if (med == null) return;
+    AlarmService.navigatorKey.currentState?.push(
+      MaterialPageRoute(
+        builder: (_) => AlarmScreen(medication: med, dueTime: time),
+      ),
+    );
   }
 
   @override

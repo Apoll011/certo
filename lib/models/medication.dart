@@ -13,6 +13,7 @@ class Medication {
     required this.pillColorIndex,
     required this.status,
     required this.startedAt,
+    this.frequencyDays = 1,
   });
 
   final String id;
@@ -37,11 +38,17 @@ class Medication {
   final MedicationStatus status;
   final DateTime startedAt;
 
+  /// How often the medication is taken, in days (1 = daily, 3 = every 3 days).
+  final int frequencyDays;
+
   /// "1 tablet · After meal"
   String get dosageLine => '$dosage · $instruction';
 
   /// "9:00 AM · 1:00 PM · 9:00 PM"
   String get timesLine => times.join(' · ');
+
+  /// The first scheduled time, with a safe fallback.
+  String get firstTime => times.isEmpty ? '9:00 AM' : times.first;
 
   /// Parses a row returned by the Supabase Data API (snake_case columns).
   factory Medication.fromJson(Map<String, dynamic> json) {
@@ -56,6 +63,7 @@ class Medication {
       pillColorIndex: (json['pill_color_index'] as num?)?.toInt() ?? 0,
       status: _statusFromDb(json['status']),
       startedAt: _dateFromDb(json['started_at']),
+      frequencyDays: (json['frequency_days'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -70,6 +78,7 @@ class Medication {
     'pill_color_index': pillColorIndex,
     'status': status.name,
     'started_at': _dateToDb(startedAt),
+    'frequency_days': frequencyDays,
   };
 }
 

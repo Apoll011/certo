@@ -361,4 +361,33 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get noScheduleBody => 'Nenhum medicamento agendado para este dia.';
+
+  @override
+  String get mealBreakfast => 'Após o café da manhã';
+
+  @override
+  String get mealLunch => 'Após o almoço';
+
+  @override
+  String get mealDinner => 'Após o jantar';
+
+  @override
+  String get frequency => 'Frequência';
+
+  @override
+  String get everyDay => 'Todos os dias';
+
+  @override
+  String everyNDays(int n) {
+    return 'A cada $n dias';
+  }
+
+  @override
+  String get takeNow => 'Tomar agora';
+
+  @override
+  String get nothingDueToday => 'Nada para hoje';
+
+  @override
+  String get nothingDueTodayBody => 'Você não tem doses agendadas para hoje.';
 }

@@ -159,5 +159,20 @@
   "emptyFilterTitle": "Nothing here",
   "emptyFilterBody": "No medications match this filter.",
   "noScheduleTitle": "Nothing scheduled",
-  "noScheduleBody": "No medications scheduled for this day."
+  "noScheduleBody": "No medications scheduled for this day.",
+
+  "mealBreakfast": "After breakfast",
+  "mealLunch": "After lunch",
+  "mealDinner": "After dinner",
+  "frequency": "Frequency",
+  "everyDay": "Every day",
+  "everyNDays": "Every {n} days",
+  "@everyNDays": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+  "takeNow": "Take now",
+  "nothingDueToday": "Nothing due today",
+  "nothingDueTodayBody": "You have no doses scheduled for today."
 }

@@ -6,7 +6,7 @@ import '../models/medication.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../utils/format.dart';
+import '../utils/schedule.dart';
 import '../widgets/circle_icon_button.dart';
 import '../widgets/primary_button.dart';
 
@@ -29,6 +29,7 @@ class _ManualMedicationFormScreenState
   final _notesController = TextEditingController();
 
   final List<String> _times = [];
+  int _frequencyDays = 1;
   int _pillColorIndex = 0;
   bool _saving = false;
   String? _error;
@@ -113,6 +114,8 @@ class _ManualMedicationFormScreenState
                     maxLines: 3,
                   ),
                   const SizedBox(height: 24),
+                  _frequencySection(l10n),
+                  const SizedBox(height: 24),
                   _timesSection(l10n),
                   const SizedBox(height: 24),
                   _colorSection(l10n),
@@ -195,18 +198,82 @@ class _ManualMedicationFormScreenState
     );
   }
 
+  Widget _frequencySection(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(l10n.frequency, style: AppTheme.bodySmall),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final days in const [1, 2, 3, 7])
+              ChoiceChip(
+                label: Text(_frequencyLabel(l10n, days)),
+                selected: _frequencyDays == days,
+                onSelected: (_) => setState(() => _frequencyDays = days),
+                selectedColor: AppColors.primary,
+                labelStyle: TextStyle(
+                  color: _frequencyDays == days
+                      ? Colors.white
+                      : AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+                showCheckmark: false,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _frequencyLabel(AppLocalizations l10n, int days) =>
+      days == 1 ? l10n.everyDay : l10n.everyNDays(days);
+
   Widget _timesSection(AppLocalizations l10n) {
+    final clockTimes = _times.where((t) => !isMealToken(t)).toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(l10n.times, style: AppTheme.bodySmall),
-        const SizedBox(height: 8),
-        if (_times.isNotEmpty)
+        const SizedBox(height: 10),
+        // Meal anchors (breakfast / lunch / dinner).
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final token in const ['breakfast', 'lunch', 'dinner'])
+              FilterChip(
+                label: Text(displayTime(token, l10n)),
+                selected: _times.contains(token),
+                onSelected: (selected) => setState(() {
+                  if (selected) {
+                    if (!_times.contains(token)) _times.add(token);
+                  } else {
+                    _times.remove(token);
+                  }
+                  _sortTimes();
+                }),
+                selectedColor: AppColors.primarySoft,
+                checkmarkColor: AppColors.primary,
+                labelStyle: TextStyle(
+                  color: _times.contains(token)
+                      ? AppColors.primary
+                      : AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (clockTimes.isNotEmpty)
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final time in _times)
+              for (final time in clockTimes)
                 InputChip(
                   label: Text(time),
                   onDeleted: () => setState(() => _times.remove(time)),
@@ -219,7 +286,7 @@ class _ManualMedicationFormScreenState
                 ),
             ],
           ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 12),
         OutlinedButton.icon(
           onPressed: _addTime,
           icon: const Icon(Icons.add_rounded, size: 20),
@@ -287,8 +354,14 @@ class _ManualMedicationFormScreenState
     if (_times.contains(formatted)) return;
     setState(() {
       _times.add(formatted);
-      _times.sort((a, b) => minuteFromTime(a).compareTo(minuteFromTime(b)));
+      _sortTimes();
     });
+  }
+
+  void _sortTimes() {
+    _times.sort(
+      (a, b) => resolveTimeMinutes(a).compareTo(resolveTimeMinutes(b)),
+    );
   }
 
   String _formatTime(TimeOfDay t) {
@@ -326,6 +399,7 @@ class _ManualMedicationFormScreenState
       pillColorIndex: _pillColorIndex,
       status: MedicationStatus.active,
       startedAt: DateTime.now(),
+      frequencyDays: _frequencyDays,
     );
 
     final state = context.read<AppState>();

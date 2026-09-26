@@ -359,4 +359,33 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noScheduleBody => 'No medications scheduled for this day.';
+
+  @override
+  String get mealBreakfast => 'After breakfast';
+
+  @override
+  String get mealLunch => 'After lunch';
+
+  @override
+  String get mealDinner => 'After dinner';
+
+  @override
+  String get frequency => 'Frequency';
+
+  @override
+  String get everyDay => 'Every day';
+
+  @override
+  String everyNDays(int n) {
+    return 'Every $n days';
+  }
+
+  @override
+  String get takeNow => 'Take now';
+
+  @override
+  String get nothingDueToday => 'Nothing due today';
+
+  @override
+  String get nothingDueTodayBody => 'You have no doses scheduled for today.';
 }

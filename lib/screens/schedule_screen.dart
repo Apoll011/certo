@@ -7,6 +7,7 @@ import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/schedule.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/medication_card.dart';
 import '../widgets/taken_checkbox.dart';
@@ -82,9 +83,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       });
     }
 
-    // Medications that were already active on the selected day.
+    // Medications scheduled on the selected day (frequency + start aware).
     final medsForDay = active
-        .where((m) => _startedOnOrBefore(m.startedAt, _selectedDate))
+        .where((m) => isScheduledOn(m, _selectedDate))
         .toList();
 
     final isToday = _sameDay(_selectedDate, today);
@@ -135,7 +136,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         l10n.morning,
                         medsForDay
                             .where(
-                              (m) => minuteFromTime(m.times.first) < 12 * 60,
+                              (m) => resolveTimeMinutes(m.firstTime) < 12 * 60,
                             )
                             .toList(),
                         isToday: isToday,
@@ -144,7 +145,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         context,
                         l10n.afternoon,
                         medsForDay.where((m) {
-                          final t = minuteFromTime(m.times.first);
+                          final t = resolveTimeMinutes(m.firstTime);
                           return t >= 12 * 60 && t < 17 * 60;
                         }).toList(),
                         isToday: isToday,
@@ -154,7 +155,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         l10n.evening,
                         medsForDay
                             .where(
-                              (m) => minuteFromTime(m.times.first) >= 17 * 60,
+                              (m) => resolveTimeMinutes(m.firstTime) >= 17 * 60,
                             )
                             .toList(),
                         isToday: isToday,
@@ -315,8 +316,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final state = context.read<AppState>();
     meds.sort(
       (a, b) =>
-          minuteFromTime(a.times.first)
-              .compareTo(minuteFromTime(b.times.first)),
+          resolveTimeMinutes(a.firstTime)
+              .compareTo(resolveTimeMinutes(b.firstTime)),
     );
 
     return Column(
@@ -368,12 +369,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       if (earliest == null || d.isBefore(earliest)) earliest = d;
     }
     return earliest;
-  }
-
-  bool _startedOnOrBefore(DateTime startedAt, DateTime day) {
-    final a = DateTime(startedAt.year, startedAt.month, startedAt.day);
-    final b = DateTime(day.year, day.month, day.day);
-    return !a.isAfter(b);
   }
 
   bool _sameDay(DateTime a, DateTime b) =>

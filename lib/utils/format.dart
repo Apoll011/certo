@@ -55,3 +55,11 @@ int minuteFromTime(String time) {
   if (parsed == null) return 0;
   return parsed.hour * 60 + parsed.minute;
 }
+
+/// Formats a [DateTime] as a 12-hour clock string, e.g. "9:00 AM".
+String clock12(DateTime d) {
+  final hour12 = d.hour % 12 == 0 ? 12 : d.hour % 12;
+  final minute = d.minute.toString().padLeft(2, '0');
+  final ampm = d.hour < 12 ? 'AM' : 'PM';
+  return '$hour12:$minute $ampm';
+}
