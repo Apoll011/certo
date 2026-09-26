@@ -1,9 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:audioplayers/audioplayers.dart';
+import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../ai/ai.dart';
+import '../config/app_config.dart';
 import '../models/medication.dart';
+import '../services/elevenlabs_service.dart';
 import '../state/app_state.dart';
 import '../utils/schedule.dart';
 
@@ -11,12 +19,14 @@ import '../utils/schedule.dart';
 Future<void> showVisualVerificationScreen(
   BuildContext context, {
   Medication? targetMedication,
+  String? expectedMedicationName,
   VisualVerificationStatus initialStatus = VisualVerificationStatus.identifying,
 }) {
   return Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
       builder: (_) => VisualVerificationScreen(
         targetMedication: targetMedication,
+        expectedMedicationName: expectedMedicationName,
         initialStatus: initialStatus,
       ),
       fullscreenDialog: true,
@@ -24,15 +34,17 @@ Future<void> showVisualVerificationScreen(
   );
 }
 
-/// Camera-first visual medication verification screen matching the 3-state Certo safety model.
+/// Camera-first visual medication verification with DeepSeek vision + tools.
 class VisualVerificationScreen extends StatefulWidget {
   const VisualVerificationScreen({
     super.key,
     this.targetMedication,
+    this.expectedMedicationName,
     this.initialStatus = VisualVerificationStatus.identifying,
   });
 
   final Medication? targetMedication;
+  final String? expectedMedicationName;
   final VisualVerificationStatus initialStatus;
 
   @override
@@ -40,38 +52,79 @@ class VisualVerificationScreen extends StatefulWidget {
       _VisualVerificationScreenState();
 }
 
-class _VisualVerificationScreenState extends State<VisualVerificationScreen>
-    with SingleTickerProviderStateMixin {
-  late VisualVerificationStatus _status;
+class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
+  CameraController? _camera;
+  bool _cameraReady = false;
+  String? _cameraError;
   bool _flashOn = false;
   bool _isProcessing = false;
 
-  // Verification details
-  String _identifiedName = 'Amoxicillin 500mg';
-  String _category = 'Antibiotic · Oral tablet';
-  String _matchMessage = 'This is your medication. It\'s scheduled for now.';
-  String _expectedName = 'Amoxicillin 500mg';
-  String _nextDoseTime = '9:00 AM';
-  String _nextDoseInstruction = '1 tablet · After meal';
+  late VisualVerificationStatus _status;
 
-  late final AnimationController _scanAnimCtrl;
-  late final Animation<double> _scanLineAnim;
+  String _identifiedName = '';
+  String _category = '';
+  String _matchMessage = '';
+  String _expectedName = '';
+  String _nextDoseTime = '';
+  String _nextDoseInstruction = '';
+
+  final ElevenLabsService _voice = ElevenLabsService();
+  final AudioPlayer _player = AudioPlayer();
+  StreamSubscription<VoiceEvent>? _voiceSub;
+  final List<int> _ttsBuffer = [];
+  Completer<void>? _ttsDone;
 
   @override
   void initState() {
     super.initState();
     _status = widget.initialStatus;
-
-    _scanAnimCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2200),
-    )..repeat(reverse: true);
-
-    _scanLineAnim = Tween<double>(begin: 0.15, end: 0.85).animate(
-      CurvedAnimation(parent: _scanAnimCtrl, curve: Curves.easeInOut),
-    );
-
+    _voiceSub = _voice.events.listen(_onVoiceEvent);
+    _player.onPlayerComplete.listen((_) {
+      if (_ttsDone != null && !_ttsDone!.isCompleted) {
+        _ttsDone!.complete();
+      }
+    });
     _initFromSchedule();
+    _initCamera();
+  }
+
+  void _onVoiceEvent(VoiceEvent event) {
+    switch (event) {
+      case TtsAudioChunk(:final bytes):
+        _ttsBuffer.addAll(bytes);
+      case TtsDone():
+        _playTtsBuffer();
+      case VoiceError(:final message):
+        debugPrint('VisualMode TTS error: $message');
+        if (_ttsDone != null && !_ttsDone!.isCompleted) {
+          _ttsDone!.complete();
+        }
+      default:
+        break;
+    }
+  }
+
+  Future<void> _playTtsBuffer() async {
+    if (_ttsBuffer.isEmpty) {
+      if (_ttsDone != null && !_ttsDone!.isCompleted) {
+        _ttsDone!.complete();
+      }
+      return;
+    }
+    final bytes = Uint8List.fromList(_ttsBuffer);
+    _ttsBuffer.clear();
+    try {
+      final tempFile = File(
+        '${Directory.systemTemp.path}/visual_tts_${DateTime.now().millisecondsSinceEpoch}.mp3',
+      );
+      await tempFile.writeAsBytes(bytes, flush: true);
+      await _player.play(DeviceFileSource(tempFile.path));
+    } catch (e) {
+      debugPrint('VisualMode: playback failed: $e');
+      if (_ttsDone != null && !_ttsDone!.isCompleted) {
+        _ttsDone!.complete();
+      }
+    }
   }
 
   void _initFromSchedule() {
@@ -81,89 +134,227 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
     final target = widget.targetMedication ??
         (active.isNotEmpty ? active.first : null);
 
-    if (target != null) {
+    final expectedOverride = widget.expectedMedicationName?.trim();
+    if (expectedOverride != null && expectedOverride.isNotEmpty) {
+      _expectedName = expectedOverride;
+      _identifiedName = expectedOverride;
+    } else if (target != null) {
       _identifiedName = target.name;
       _expectedName = target.name;
-      _category = target.category.isNotEmpty
-          ? target.category
-          : 'Oral prescription';
+      _category =
+          target.category.isNotEmpty ? target.category : 'Oral prescription';
       _nextDoseTime = target.firstTime;
       _nextDoseInstruction = target.dosageLine;
-    } else {
-      _identifiedName = 'Amoxicillin 500mg';
-      _expectedName = 'Amoxicillin 500mg';
-      _category = 'Antibiotic · Oral tablet';
-      _nextDoseTime = '9:00 AM';
-      _nextDoseInstruction = '1 tablet · After meal';
+    }
+
+    // Prefer a dose that is due right now when no override was given.
+    if (expectedOverride == null || expectedOverride.isEmpty) {
+      final dues = dueDoses(appState.medications, DateTime.now());
+      if (dues.isNotEmpty) {
+        final due = dues.first;
+        _expectedName = due.medication.name;
+        _nextDoseTime = due.time;
+        _nextDoseInstruction = due.medication.dosageLine;
+        _category = due.medication.category.isNotEmpty
+            ? due.medication.category
+            : _category;
+      }
+    }
+  }
+
+  Future<void> _initCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        if (mounted) {
+          setState(() => _cameraError = 'No camera found on this device.');
+        }
+        return;
+      }
+
+      // Prefer back camera for package scanning.
+      final cam = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      final controller = CameraController(
+        cam,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      _camera = controller;
+      setState(() => _cameraReady = true);
+    } catch (e) {
+      debugPrint('VisualMode: camera init failed: $e');
+      if (mounted) {
+        setState(() => _cameraError = 'Camera unavailable: $e');
+      }
     }
   }
 
   @override
   void dispose() {
-    _scanAnimCtrl.dispose();
+    _voiceSub?.cancel();
+    _camera?.dispose();
+    _voice.dispose();
+    _player.dispose();
+    if (_ttsDone != null && !_ttsDone!.isCompleted) {
+      _ttsDone!.complete();
+    }
     super.dispose();
   }
 
-  /// Simulates taking a photo and running the AI visual verification model.
-  Future<void> _captureAndAnalyze([VisualVerificationStatus? forcedState]) async {
+  Future<void> _toggleFlash() async {
+    final cam = _camera;
+    if (cam == null || !cam.value.isInitialized) return;
+    try {
+      final next = !_flashOn;
+      await cam.setFlashMode(next ? FlashMode.torch : FlashMode.off);
+      if (mounted) setState(() => _flashOn = next);
+    } catch (e) {
+      debugPrint('VisualMode: flash toggle failed: $e');
+    }
+  }
+
+  Future<void> _captureAndAnalyze() async {
     if (_isProcessing) return;
-    setState(() {
-      _isProcessing = true;
-      _status = VisualVerificationStatus.identifying;
-    });
-
-    // Register tool callback to capture result from AI if called
-    final appState = Provider.of<AppState>(context, listen: false);
-
-    // Simulate camera shutter & AI processing latency
-    await Future<void>.delayed(const Duration(milliseconds: 1400));
-
-    if (!mounted) return;
-
-    if (forcedState != null) {
+    final cam = _camera;
+    if (cam == null || !cam.value.isInitialized) {
+      setState(() => _cameraError = 'Camera is not ready yet.');
+      return;
+    }
+    if (!AppConfig.hasAiApiKey) {
       setState(() {
-        _isProcessing = false;
-        _status = forcedState;
+        _cameraError =
+            'DeepSeek API key missing. Add AI_API_KEY to .env and restart with --dart-define-from-file=.env';
       });
       return;
     }
 
-    // Inspect schedule to determine realistic match
-    final dues = dueDoses(appState.medications, DateTime.now());
-    final dueNow = dues.isNotEmpty ? dues.first.medication : null;
+    setState(() {
+      _isProcessing = true;
+      _status = VisualVerificationStatus.identifying;
+      _cameraError = null;
+    });
 
-    if (dueNow != null) {
-      setState(() {
-        _isProcessing = false;
-        _status = VisualVerificationStatus.confirmedMatch;
-        _identifiedName = dueNow.name;
-        _expectedName = dueNow.name;
-        _category = dueNow.category.isNotEmpty
-            ? dueNow.category
-            : 'Antibiotic · Oral tablet';
-        _nextDoseTime = dues.first.time;
-        _nextDoseInstruction = dueNow.dosageLine;
-        _matchMessage = 'This is your medication. It\'s scheduled for now.';
-      });
-    } else {
-      // Demo match
-      setState(() {
-        _isProcessing = false;
-        _status = VisualVerificationStatus.confirmedMatch;
-        _identifiedName = _expectedName;
-      });
+    final appState = Provider.of<AppState>(context, listen: false);
+
+    try {
+      final file = await cam.takePicture();
+      final bytes = await File(file.path).readAsBytes();
+      // Keep payload reasonable for the API.
+      final b64 = base64Encode(bytes);
+
+      if (!mounted) return;
+
+      VisualVerificationCardData? card;
+
+      final assistant = appState.createAiAssistant(
+        systemPrompt: AiAssistantService.defaultSystemPrompt(
+          userName: appState.userName,
+          now: DateTime.now(),
+          voiceMode: true,
+        ),
+        onSpeak: (text) async {
+          try {
+            _ttsBuffer.clear();
+            _ttsDone = Completer<void>();
+            await _voice.speak(text);
+            await _ttsDone!.future.timeout(
+              const Duration(seconds: 45),
+              onTimeout: () {},
+            );
+          } catch (e) {
+            debugPrint('VisualMode: TTS failed: $e');
+          } finally {
+            if (_ttsDone != null && !_ttsDone!.isCompleted) {
+              _ttsDone!.complete();
+            }
+            _ttsDone = null;
+          }
+        },
+        onShowVisualResult: (data) {
+          card = data;
+          if (!mounted) return;
+          setState(() {
+            _status = data.status == VisualVerificationStatus.identifying
+                ? VisualVerificationStatus.uncertain
+                : data.status;
+            if (data.identifiedMedicationName != null) {
+              _identifiedName = data.identifiedMedicationName!;
+            }
+            if (data.category != null) _category = data.category!;
+            if (data.message != null) _matchMessage = data.message!;
+            if (data.expectedMedicationName != null) {
+              _expectedName = data.expectedMedicationName!;
+            }
+            if (data.nextDoseTime != null) {
+              _nextDoseTime = data.nextDoseTime!;
+            }
+            if (data.nextDoseInstruction != null) {
+              _nextDoseInstruction = data.nextDoseInstruction!;
+            }
+          });
+        },
+      );
+
+      final prompt = AiAssistantService.visualVerificationPrompt(
+        expectedMedicationName: _expectedName.isNotEmpty ? _expectedName : null,
+      );
+
+      final result = await assistant.verifyMedicationImage(
+        imageBase64: b64,
+        userPrompt: prompt,
+      );
+
+      if (!mounted) return;
+
+      if (card == null) {
+        // Model forgot the tool — fall back to uncertain + any text reply.
+        setState(() {
+          _status = VisualVerificationStatus.uncertain;
+          _matchMessage = result.response.trim().isNotEmpty
+              ? result.response.trim()
+              : 'I couldn\'t verify this confidently. Please try again.';
+        });
+      }
+    } catch (e) {
+      debugPrint('VisualMode: analyze failed: $e');
+      if (mounted) {
+        setState(() {
+          _status = VisualVerificationStatus.uncertain;
+          _matchMessage = 'Analysis failed: $e';
+          _cameraError = e.toString();
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
   void _onConfirmDose() {
     final appState = Provider.of<AppState>(context, listen: false);
-    final med = findMedication(appState, name: _identifiedName);
+    final med = findMedication(
+      appState,
+      name: _identifiedName.isNotEmpty ? _identifiedName : _expectedName,
+    );
     if (med != null) {
       appState.markTaken(med.id);
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('✓ Marked "$_identifiedName" as taken.'),
+        content: Text(
+          med != null
+              ? '✓ Marked "${med.name}" as taken.'
+              : '✓ Confirmed.',
+        ),
         backgroundColor: const Color(0xFF15803D),
         behavior: SnackBarBehavior.floating,
       ),
@@ -171,34 +362,54 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
     Navigator.of(context).pop();
   }
 
+  void _resetToScan() {
+    setState(() {
+      _status = VisualVerificationStatus.identifying;
+      _isProcessing = false;
+      _matchMessage = '';
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
+        fit: StackFit.expand,
         children: [
-          // ── Camera Viewfinder (Realistic Scene) ──────────────────────────
-          Positioned.fill(
-            child: _ViewfinderBackground(flashOn: _flashOn),
-          ),
-
-          // ── Reticle dashed blue box with subtle scan line ────────────────
-          Positioned(
-            top: MediaQuery.of(context).size.height * 0.18,
-            left: 24,
-            right: 24,
-            height: MediaQuery.of(context).size.height * 0.28,
-            child: AnimatedBuilder(
-              animation: _scanAnimCtrl,
-              builder: (context, _) => _ScannerReticle(
-                scanLineProgress: _status == VisualVerificationStatus.identifying
-                    ? _scanLineAnim.value
-                    : null,
+          // ── Live camera preview ─────────────────────────────────────────
+          if (_cameraReady && _camera != null)
+            FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: _camera!.value.previewSize?.height ??
+                    MediaQuery.of(context).size.width,
+                height: _camera!.value.previewSize?.width ??
+                    MediaQuery.of(context).size.height,
+                child: CameraPreview(_camera!),
               ),
+            )
+          else
+            Container(
+              color: const Color(0xFF0D1B2E),
+              alignment: Alignment.center,
+              child: _cameraError != null
+                  ? Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Text(
+                        _cameraError!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white70, fontSize: 15),
+                      ),
+                    )
+                  : const CircularProgressIndicator(color: Color(0xFF3366FF)),
             ),
-          ),
 
-          // ── Top Header Controls (Close & Flash) ──────────────────────────
+          // Dim overlay while processing
+          if (_isProcessing)
+            Container(color: Colors.black.withValues(alpha: 0.35)),
+
+          // ── Top controls ────────────────────────────────────────────────
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -213,43 +424,55 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
                     icon: _flashOn
                         ? Icons.flash_on_rounded
                         : Icons.flash_off_rounded,
-                    onTap: () => setState(() => _flashOn = !_flashOn),
+                    onTap: _toggleFlash,
                   ),
                 ],
               ),
             ),
           ),
 
-          // ── Demo State Quick Switcher (Top Right Sub-bar) ─────────────────
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 58,
-            right: 20,
-            child: _DemoStatePicker(
-              currentStatus: _status,
-              onSelect: (st) => _captureAndAnalyze(st),
+          // Hint when idle
+          if (_status == VisualVerificationStatus.identifying && !_isProcessing)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 72,
+              left: 24,
+              right: 24,
+              child: const Text(
+                'Point at the medication package',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  shadows: [Shadow(blurRadius: 8, color: Colors.black54)],
+                ),
+              ),
             ),
-          ),
 
-          // ── Bottom Sheet (The 4 Distinct States) ────────────────────────
+          // ── Bottom sheet ────────────────────────────────────────────────
           Align(
             alignment: Alignment.bottomCenter,
             child: _VerificationBottomSheet(
               status: _status,
               isProcessing: _isProcessing,
-              identifiedName: _identifiedName,
-              category: _category,
-              matchMessage: _matchMessage,
-              expectedName: _expectedName,
-              nextDoseTime: _nextDoseTime,
-              nextDoseInstruction: _nextDoseInstruction,
-              onCapture: () => _captureAndAnalyze(),
+              identifiedName: _identifiedName.isNotEmpty
+                  ? _identifiedName
+                  : 'Medication',
+              category: _category.isNotEmpty ? _category : 'Prescription',
+              matchMessage: _matchMessage.isNotEmpty
+                  ? _matchMessage
+                  : 'This is your medication. It\'s scheduled for now.',
+              expectedName:
+                  _expectedName.isNotEmpty ? _expectedName : 'Scheduled dose',
+              nextDoseTime:
+                  _nextDoseTime.isNotEmpty ? _nextDoseTime : '—',
+              nextDoseInstruction: _nextDoseInstruction.isNotEmpty
+                  ? _nextDoseInstruction
+                  : '',
+              onCapture: _captureAndAnalyze,
               onConfirm: _onConfirmDose,
-              onScanAnother: () => setState(() {
-                _status = VisualVerificationStatus.identifying;
-              }),
-              onTryAgain: () => setState(() {
-                _status = VisualVerificationStatus.identifying;
-              }),
+              onScanAnother: _resetToScan,
+              onTryAgain: _resetToScan,
             ),
           ),
         ],
@@ -259,209 +482,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Viewfinder Background & Reticle
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ViewfinderBackground extends StatelessWidget {
-  const _ViewfinderBackground({required this.flashOn});
-
-  final bool flashOn;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1E2430),
-        image: const DecorationImage(
-          // Uses an artistic warm-lit desk composition representation
-          image: AssetImage('assets/icon.png'),
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          opacity: 0.15,
-        ),
-      ),
-      child: CustomPaint(
-        painter: _TablePillboxPainter(flashOn: flashOn),
-      ),
-    );
-  }
-}
-
-class _TablePillboxPainter extends CustomPainter {
-  const _TablePillboxPainter({required this.flashOn});
-  final bool flashOn;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Warm background sunlight gradient
-    final bgPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          const Color(0xFF655B51),
-          const Color(0xFFBCA68E),
-          const Color(0xFFD6C1A9),
-          const Color(0xFF9F8367),
-        ],
-        stops: const [0.0, 0.35, 0.70, 1.0],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
-
-    if (flashOn) {
-      final flashPaint = Paint()
-        ..color = Colors.white.withValues(alpha: 0.25)
-        ..blendMode = BlendMode.screen;
-      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), flashPaint);
-    }
-
-    // Glass of water in top right
-    final glassPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.22)
-      ..style = PaintingStyle.fill;
-    final glassRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(size.width * 0.72, size.height * 0.22, 54, 85),
-      const Radius.circular(8),
-    );
-    canvas.drawRRect(glassRect, glassPaint);
-
-    // 7-day pill organizer container in center
-    final boxRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(
-        size.width * 0.12,
-        size.height * 0.27,
-        size.width * 0.76,
-        size.height * 0.11,
-      ),
-      const Radius.circular(12),
-    );
-
-    // Drop shadow
-    final shadowPaint = Paint()
-      ..color = Colors.black.withValues(alpha: 0.22)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
-    canvas.drawRRect(boxRect.shift(const Offset(4, 10)), shadowPaint);
-
-    // Pillbox body (white/frosted)
-    final boxPaint = Paint()..color = const Color(0xFFF7F8F9);
-    canvas.drawRRect(boxRect, boxPaint);
-
-    final boxBorder = Paint()
-      ..color = const Color(0xFFD3D8E0)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    canvas.drawRRect(boxRect, boxBorder);
-
-    // 7 compartment divisions
-    final compWidth = (size.width * 0.76) / 7;
-    final days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-    for (int i = 0; i < 7; i++) {
-      final x = size.width * 0.12 + (i * compWidth);
-      if (i > 0) {
-        canvas.drawLine(
-          Offset(x, size.height * 0.27),
-          Offset(x, size.height * 0.38),
-          boxBorder,
-        );
-      }
-
-      // Draw day label text
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: days[i],
-          style: const TextStyle(
-            color: Color(0xFF6B7280),
-            fontSize: 9,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-
-      textPainter.paint(
-        canvas,
-        Offset(x + 5, size.height * 0.28),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _TablePillboxPainter oldDelegate) =>
-      oldDelegate.flashOn != flashOn;
-}
-
-class _ScannerReticle extends StatelessWidget {
-  const _ScannerReticle({this.scanLineProgress});
-
-  final double? scanLineProgress;
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _DashedReticlePainter(scanLineProgress: scanLineProgress),
-    );
-  }
-}
-
-class _DashedReticlePainter extends CustomPainter {
-  const _DashedReticlePainter({this.scanLineProgress});
-  final double? scanLineProgress;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final borderPaint = Paint()
-      ..color = const Color(0xFF3366FF)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-
-    final rrect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      const Radius.circular(20),
-    );
-
-    // Draw dashed path around the rrect
-    final path = Path()..addRRect(rrect);
-    final metrics = path.computeMetrics();
-    const dashWidth = 14.0;
-    const dashSpace = 8.0;
-
-    for (final metric in metrics) {
-      double distance = 0;
-      while (distance < metric.length) {
-        final len = (distance + dashWidth < metric.length)
-            ? dashWidth
-            : metric.length - distance;
-        final extract = metric.extractPath(distance, distance + len);
-        canvas.drawPath(extract, borderPaint);
-        distance += dashWidth + dashSpace;
-      }
-    }
-
-    // Laser / scanning beam line
-    if (scanLineProgress != null) {
-      final y = size.height * scanLineProgress!;
-      final laserPaint = Paint()
-        ..shader = LinearGradient(
-          colors: [
-            Colors.transparent,
-            Colors.white.withValues(alpha: 0.9),
-            Colors.transparent,
-          ],
-          stops: const [0.0, 0.5, 1.0],
-        ).createShader(Rect.fromLTWH(0, y - 2, size.width, 4))
-        ..strokeWidth = 2;
-
-      canvas.drawLine(Offset(12, y), Offset(size.width - 12, y), laserPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _DashedReticlePainter oldDelegate) =>
-      oldDelegate.scanLineProgress != scanLineProgress;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Bottom Sheet matching the 4 screenshots
+//  Bottom sheet (3-state Certo safety model)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _VerificationBottomSheet extends StatelessWidget {
@@ -515,7 +536,6 @@ class _VerificationBottomSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag handle
           Container(
             width: 38,
             height: 4,
@@ -525,8 +545,6 @@ class _VerificationBottomSheet extends StatelessWidget {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-
-          // Content according to the 4 states
           switch (status) {
             VisualVerificationStatus.identifying => _buildIdentifyingState(),
             VisualVerificationStatus.confirmedMatch =>
@@ -540,7 +558,6 @@ class _VerificationBottomSheet extends StatelessWidget {
     );
   }
 
-  // ── State 1: Identifying ──────────────────────────────────────────────────
   Widget _buildIdentifyingState() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -565,8 +582,8 @@ class _VerificationBottomSheet extends StatelessWidget {
             const SizedBox(width: 8),
             Text(
               isProcessing
-                  ? 'Analyzing medication image...'
-                  : 'Identifying medication...',
+                  ? 'Analyzing with AI…'
+                  : 'Ready to scan',
               style: const TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
@@ -576,16 +593,13 @@ class _VerificationBottomSheet extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        const Text(
-          'Point at the package and keep it steady.',
-          style: TextStyle(
-            fontSize: 14,
-            color: Color(0xFF64748B),
-          ),
+        Text(
+          isProcessing
+              ? 'Checking the package against your schedule.'
+              : 'Tap the button to capture and verify.',
+          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 24),
-
-        // Shutter Button
         GestureDetector(
           onTap: isProcessing ? null : onCapture,
           child: Container(
@@ -593,16 +607,15 @@ class _VerificationBottomSheet extends StatelessWidget {
             height: 72,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(
-                color: const Color(0xFF3366FF),
-                width: 3.5,
-              ),
+              border: Border.all(color: const Color(0xFF3366FF), width: 3.5),
             ),
             padding: const EdgeInsets.all(5),
             child: Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Color(0xFF3366FF),
+                color: isProcessing
+                    ? const Color(0xFF94A3B8)
+                    : const Color(0xFF3366FF),
               ),
             ),
           ),
@@ -612,16 +625,12 @@ class _VerificationBottomSheet extends StatelessWidget {
     );
   }
 
-  // ── State 2: Confirmed Match (Screen 2 in picture) ─────────────────────────
   Widget _buildConfirmedMatchState() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Name & Identified Badge
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Text(
@@ -666,14 +675,9 @@ class _VerificationBottomSheet extends StatelessWidget {
         const SizedBox(height: 3),
         Text(
           category,
-          style: const TextStyle(
-            fontSize: 13,
-            color: Color(0xFF64748B),
-          ),
+          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 14),
-
-        // Green match pill banner
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
@@ -703,8 +707,6 @@ class _VerificationBottomSheet extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 14),
-
-        // Next dose card
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(14),
@@ -757,8 +759,6 @@ class _VerificationBottomSheet extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-
-        // Primary Confirm button
         SizedBox(
           width: double.infinity,
           height: 52,
@@ -778,9 +778,6 @@ class _VerificationBottomSheet extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 8),
-
-        // Scan another text button
         Center(
           child: TextButton(
             onPressed: onScanAnother,
@@ -798,12 +795,10 @@ class _VerificationBottomSheet extends StatelessWidget {
     );
   }
 
-  // ── State 3: Confirmed Mismatch (Screen 3 in picture) ──────────────────────
   Widget _buildConfirmedMismatchState() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Red warning rounded square icon
         Container(
           width: 48,
           height: 48,
@@ -811,36 +806,30 @@ class _VerificationBottomSheet extends StatelessWidget {
             color: const Color(0xFFF04438),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: const Icon(
-            Icons.warning_rounded,
-            color: Colors.white,
-            size: 26,
-          ),
+          child: const Icon(Icons.warning_rounded, color: Colors.white, size: 26),
         ),
         const SizedBox(height: 14),
-
         const Text(
           'Not your medication',
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w800,
             color: Color(0xFF0F172A),
-            letterSpacing: -0.3,
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'This isn\'t the medication scheduled for now. Please scan another package.',
+        Text(
+          matchMessage.isNotEmpty
+              ? matchMessage
+              : 'This isn\'t the medication scheduled for now. Please scan another package.',
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 14,
             color: Color(0xFF64748B),
             height: 1.35,
           ),
         ),
         const SizedBox(height: 18),
-
-        // YOU NEED card
         Container(
           width: double.infinity,
           padding: const EdgeInsets.all(14),
@@ -864,15 +853,16 @@ class _VerificationBottomSheet extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Text(
-                    expectedName,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
+                  Expanded(
+                    child: Text(
+                      expectedName,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                      ),
                     ),
                   ),
-                  const Spacer(),
                   Text(
                     nextDoseInstruction,
                     style: const TextStyle(
@@ -887,8 +877,6 @@ class _VerificationBottomSheet extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-
-        // Try again button
         SizedBox(
           width: double.infinity,
           height: 52,
@@ -912,12 +900,10 @@ class _VerificationBottomSheet extends StatelessWidget {
     );
   }
 
-  // ── State 4: Uncertain (Screen 4 in picture) ───────────────────────────────
   Widget _buildUncertainState() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Purple question rounded square icon
         Container(
           width: 48,
           height: 48,
@@ -925,36 +911,30 @@ class _VerificationBottomSheet extends StatelessWidget {
             color: const Color(0xFF8B6BF6),
             borderRadius: BorderRadius.circular(14),
           ),
-          child: const Icon(
-            Icons.help_outline_rounded,
-            color: Colors.white,
-            size: 26,
-          ),
+          child: const Icon(Icons.help_outline_rounded, color: Colors.white, size: 26),
         ),
         const SizedBox(height: 14),
-
         const Text(
           'I\'m not sure',
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w800,
             color: Color(0xFF0F172A),
-            letterSpacing: -0.3,
           ),
         ),
         const SizedBox(height: 6),
-        const Text(
-          'I can\'t identify this medication confidently. Please move closer and scan it again.',
+        Text(
+          matchMessage.isNotEmpty
+              ? matchMessage
+              : 'I can\'t identify this medication confidently. Please move closer and scan again.',
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 14,
             color: Color(0xFF64748B),
             height: 1.35,
           ),
         ),
         const SizedBox(height: 24),
-
-        // Try again button
         SizedBox(
           width: double.infinity,
           height: 52,
@@ -978,10 +958,6 @@ class _VerificationBottomSheet extends StatelessWidget {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Header Circular Button (Close & Flash)
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _RoundHeaderBtn extends StatelessWidget {
   const _RoundHeaderBtn({required this.icon, required this.onTap});
@@ -1001,63 +977,6 @@ class _RoundHeaderBtn extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         child: Icon(icon, color: Colors.white, size: 20),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Demo State Quick Switcher
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _DemoStatePicker extends StatelessWidget {
-  const _DemoStatePicker({
-    required this.currentStatus,
-    required this.onSelect,
-  });
-
-  final VisualVerificationStatus currentStatus;
-  final ValueChanged<VisualVerificationStatus> onSelect;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _badge('Match', VisualVerificationStatus.confirmedMatch, const Color(0xFF10B981)),
-          _badge('Mismatch', VisualVerificationStatus.confirmedMismatch, const Color(0xFFEF4444)),
-          _badge('Uncertain', VisualVerificationStatus.uncertain, const Color(0xFF8B5CF6)),
-        ],
-      ),
-    );
-  }
-
-  Widget _badge(String label, VisualVerificationStatus st, Color color) {
-    final active = currentStatus == st;
-    return GestureDetector(
-      onTap: () => onSelect(st),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: active ? color : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? Colors.white : Colors.white70,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
       ),
     );
   }

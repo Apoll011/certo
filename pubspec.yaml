@@ -48,6 +48,7 @@ dependencies:
   record: ^7.1.1
   web_socket_channel: ^3.0.3
   http: ^1.6.0
+  camera: ^0.12.1
 
 dev_dependencies:
   flutter_test:

@@ -50,11 +50,14 @@ class AppConfig {
     defaultValue: 'https://api.deepseek.com',
   );
 
-  /// AI Model name. Defaults to 'deepseek-chat'.
+  /// AI Model name. Defaults to 'deepseek-flash' (multimodal + tools).
   /// Override via --dart-define=AI_MODEL=...
   static const String aiModel = String.fromEnvironment(
     'AI_MODEL',
-    defaultValue: 'deepseek-chat',
+    defaultValue: 'deepseek-flash',
   );
+
+  /// Whether the DeepSeek / AI API key is configured.
+  static bool get hasAiApiKey => aiApiKey.isNotEmpty;
 }
 

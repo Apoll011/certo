@@ -13,9 +13,10 @@ import '../widgets/screen_header.dart';
 import 'manual_medication_form_screen.dart';
 import 'medication_detail_screen.dart';
 import 'visual_verification_screen.dart';
+import 'voice_mode_sheet.dart';
 
 
-/// Entry point for adding a medication (scan or manual).
+/// Entry point for adding a medication (scan, AI voice, or manual).
 class AddMedicationScreen extends StatelessWidget {
   const AddMedicationScreen({super.key});
 
@@ -49,12 +50,22 @@ class AddMedicationScreen extends StatelessWidget {
                 children: [
                   _optionCard(
                     context,
+                    icon: Icons.mic_none_rounded,
+                    title: 'Add with AI',
+                    subtitle: 'Describe the medication — AI will ask if needed',
+                    onTap: () => showVoiceMode(
+                      context,
+                      intent: VoiceModeIntent.addMedication,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  _optionCard(
+                    context,
                     icon: Icons.camera_alt_outlined,
                     title: l10n.scanPackage,
                     subtitle: l10n.scanPackageSubtitle,
                     onTap: () => showVisualVerificationScreen(context),
                   ),
-
                   const SizedBox(height: AppSpacing.md),
                   _optionCard(
                     context,

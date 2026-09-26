@@ -78,7 +78,17 @@ class AppState extends ChangeNotifier {
     String? apiKey,
     String? baseUrl,
     String? model,
+    String? systemPrompt,
+    Future<void> Function(String text)? onSpeak,
+    Future<void> Function(VisualModeRequest request)? onStartVisualMode,
+    void Function(VisualVerificationCardData data)? onShowVisualResult,
   }) {
+    final registry = AiToolRegistry.withAllTools(
+      this,
+      onSpeak: onSpeak,
+      onStartVisualMode: onStartVisualMode,
+      onShowVisualResult: onShowVisualResult,
+    );
     final client = OpenAiCompatibleClient(
       apiKey: apiKey ?? AppConfig.aiApiKey,
       baseUrl: (baseUrl != null && baseUrl.isNotEmpty)
@@ -88,11 +98,13 @@ class AppState extends ChangeNotifier {
     );
     return AiAssistantService(
       client: client,
-      tools: aiToolRegistry,
-      systemPromptProvider: () => AiAssistantService.defaultSystemPrompt(
-        userName: userName,
-        now: DateTime.now(),
-      ),
+      tools: registry,
+      systemPromptProvider: () =>
+          systemPrompt ??
+          AiAssistantService.defaultSystemPrompt(
+            userName: userName,
+            now: DateTime.now(),
+          ),
     );
   }
 

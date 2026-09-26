@@ -6,6 +6,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Verifi uses the microphone for voice mode so you can speak your medication questions.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Verifi uses the camera to verify medication packages against your schedule.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

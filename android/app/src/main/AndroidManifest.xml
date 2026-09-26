@@ -1,7 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Microphone access for voice mode (ElevenLabs STT). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
-    <!-- Network access for ElevenLabs API. -->
+    <!-- Camera access for visual medication verification. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <!-- Network access for ElevenLabs + DeepSeek APIs. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- OS-level medication alarms (clock alarm, wake lock, full screen intent). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>

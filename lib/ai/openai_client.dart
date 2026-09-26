@@ -22,7 +22,7 @@ class OpenAiCompatibleClient {
   OpenAiCompatibleClient({
     required this.apiKey,
     this.baseUrl = 'https://api.deepseek.com',
-    this.model = 'deepseek-chat',
+    this.model = 'deepseek-flash',
     http.Client? httpClient,
   }) : _httpClient = httpClient ?? http.Client();
 
@@ -107,7 +107,7 @@ class OpenAiCompatibleClient {
         );
       }
 
-      final json = jsonDecode(utf8.decode(response.bodyBytes));
+      final json = jsonDecode(_decodeBody(response));
       if (json is! Map<String, dynamic>) {
         throw OpenAiException(
           'Invalid JSON response format from AI API.',
@@ -120,6 +120,16 @@ class OpenAiCompatibleClient {
     } catch (e) {
       if (e is OpenAiException) rethrow;
       throw OpenAiException('Network or client error: $e');
+    }
+  }
+
+  /// Prefer UTF-8 (what DeepSeek / OpenAI return). Fall back to [Response.body]
+  /// for latin1-encoded mock responses used in tests.
+  static String _decodeBody(http.Response response) {
+    try {
+      return utf8.decode(response.bodyBytes);
+    } on FormatException {
+      return response.body;
     }
   }
 
