@@ -78,24 +78,13 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
               else ...[
                 if (!isCaregiverView) ...[
                   Text(
-                    'Create a code for someone to help you, or redeem a code to support someone else.',
+                    'Share your adherence with someone you trust, or join someone who invited you.',
                     style: textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: AppSpacing.xl),
-                  PrimaryButton(
-                    label: 'Create invite code',
-                    icon: Icons.mail_outline_rounded,
-                    onPressed: () => _createInvite(context, state),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  PrimaryButton(
-                    label: 'Redeem invite code',
-                    icon: Icons.person_add_alt_1_rounded,
-                    filled: false,
-                    onPressed: () => _redeemInvite(context, state),
-                  ),
+                  _inviteActions(context, state),
                 ] else ...[
                   Text(
                     'Green = all taken · Yellow = some taken · Red = missed or problem',
@@ -118,26 +107,21 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
                     const SizedBox(height: AppSpacing.md),
                   ],
                   const SizedBox(height: AppSpacing.xl),
-                  PrimaryButton(
-                    label: 'Create invite code',
-                    icon: Icons.mail_outline_rounded,
-                    filled: false,
-                    onPressed: () => _createInvite(context, state),
+                  Text(
+                    'Invites',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  PrimaryButton(
-                    label: 'Redeem invite code',
-                    icon: Icons.person_add_alt_1_rounded,
-                    filled: false,
-                    onPressed: () => _redeemInvite(context, state),
-                  ),
+                  _inviteActions(context, state),
                 ],
                 if (state.grantedCareLinks
                     .where((l) => l.status != CaregiverLinkStatus.revoked)
                     .isNotEmpty) ...[
                   const SizedBox(height: AppSpacing.xxl),
                   Text(
-                    'People with access to you',
+                    'People helping you',
                     style: textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -154,6 +138,33 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Two clear choices: share your meds, or add someone who shared theirs.
+  Widget _inviteActions(BuildContext context, AppState state) {
+    return Column(
+      children: [
+        _InviteActionCard(
+          icon: Icons.share_outlined,
+          title: 'Invite someone to help me',
+          subtitle:
+              'Creates a code you can send. They\'ll see your adherence calendar.',
+          buttonLabel: 'Create code',
+          filled: true,
+          onPressed: () => _createInvite(context, state),
+        ),
+        const SizedBox(height: AppSpacing.md),
+        _InviteActionCard(
+          icon: Icons.person_add_alt_1_rounded,
+          title: 'I received a code',
+          subtitle:
+              'Enter their code to support them and see how they\'re doing.',
+          buttonLabel: 'Enter code',
+          filled: false,
+          onPressed: () => _redeemInvite(context, state),
+        ),
+      ],
     );
   }
 
@@ -281,10 +292,15 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Add with invite code'),
+        title: const Text('Enter their invite code'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const Text(
+              'Ask them for the code from Invites → Create code.',
+              style: TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 16),
             TextField(
               controller: codeCtrl,
               textCapitalization: TextCapitalization.characters,
@@ -297,7 +313,7 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
             TextField(
               controller: labelCtrl,
               decoration: const InputDecoration(
-                labelText: 'Name for them (optional)',
+                labelText: 'What should we call them? (optional)',
                 hintText: 'Mom, Mrs. Silva…',
               ),
             ),
@@ -310,7 +326,7 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Add'),
+            child: const Text('Connect'),
           ),
         ],
       ),
@@ -350,6 +366,81 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => CareRecipientDetailScreen(linkId: link.id),
+      ),
+    );
+  }
+}
+
+class _InviteActionCard extends StatelessWidget {
+  const _InviteActionCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.buttonLabel,
+    required this.onPressed,
+    this.filled = true,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String buttonLabel;
+  final VoidCallback onPressed;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: scheme.primaryContainer.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, size: 22, color: scheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          PrimaryButton(
+            label: buttonLabel,
+            icon: icon,
+            filled: filled,
+            onPressed: onPressed,
+          ),
+        ],
       ),
     );
   }
