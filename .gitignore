@@ -53,3 +53,9 @@ app.*.map.json
 .env
 .env.*
 !.env.example
+
+# Android release signing (CI decodes from secrets)
+*.keystore
+*.jks
+android/app/release.keystore
+android/key.properties

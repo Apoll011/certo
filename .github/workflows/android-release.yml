@@ -1,0 +1,129 @@
+name: Android Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Decode Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+            # Prefer +build from the tag (v1.2.3+45); else keep pubspec build number.
+            if [[ "$VERSION" == *"+"* ]]; then
+              BUILD_NAME="${VERSION%%+*}"
+              BUILD_NUMBER="${VERSION##*+}"
+            else
+              BUILD_NAME="$VERSION"
+              BUILD_NUMBER="$(grep -E '^version:' pubspec.yaml | sed -E 's/.*\+([0-9]+).*/\1/')"
+            fi
+          else
+            # Manual dispatch — use pubspec.yaml version.
+            RAW="$(grep -E '^version:' pubspec.yaml | sed -E 's/^version:[[:space:]]*//')"
+            BUILD_NAME="${RAW%%+*}"
+            BUILD_NUMBER="${RAW##*+}"
+            TAG="v${RAW}"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "build_name=$BUILD_NAME" >> "$GITHUB_OUTPUT"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Resolved $TAG → name=$BUILD_NAME number=$BUILD_NUMBER"
+
+      - name: Write dart-defines
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_MODEL: ${{ secrets.AI_MODEL }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ secrets.ELEVENLABS_VOICE_ID }}
+        run: |
+          {
+            echo "SUPABASE_URL=$SUPABASE_URL"
+            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+            echo "AI_API_KEY=$AI_API_KEY"
+            echo "ELEVENLABS_API_KEY=$ELEVENLABS_API_KEY"
+            # Optional — omit when empty so AppConfig defaults still apply.
+            [ -n "$AI_BASE_URL" ] && echo "AI_BASE_URL=$AI_BASE_URL"
+            [ -n "$AI_MODEL" ] && echo "AI_MODEL=$AI_MODEL"
+            [ -n "$ELEVENLABS_VOICE_ID" ] && echo "ELEVENLABS_VOICE_ID=$ELEVENLABS_VOICE_ID"
+          } > /tmp/dart_defines.env
+          echo "Wrote dart-defines ($(wc -l < /tmp/dart_defines.env) keys)"
+
+      - name: Build APK
+        env:
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}" \
+            --dart-define-from-file=/tmp/dart_defines.env
+
+      - name: Build App Bundle
+        env:
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          flutter build appbundle --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}" \
+            --dart-define-from-file=/tmp/dart_defines.env
+
+      - name: Verify artifacts
+        run: |
+          ls -lh build/app/outputs/flutter-apk/
+          ls -lh build/app/outputs/bundle/release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Verifi ${{ steps.version.outputs.build_name }}
+          generate_release_notes: true
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
