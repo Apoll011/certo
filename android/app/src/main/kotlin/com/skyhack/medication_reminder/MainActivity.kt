@@ -1,11 +1,13 @@
 package com.skyhack.medication_reminder
 
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.net.Uri
+import android.os.Build
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -50,6 +52,9 @@ class MainActivity : FlutterActivity() {
                         stopAlarmSound()
                         result.success(null)
                     }
+                    "canUseFullScreenIntent" -> {
+                        result.success(canUseFullScreenIntent())
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -61,6 +66,17 @@ class MainActivity : FlutterActivity() {
 
     private fun defaultAlarmUri(): Uri? =
         RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+
+    /** Whether the OS currently allows full-screen intents (Android 14+). */
+    private fun canUseFullScreenIntent(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.canUseFullScreenIntent() ?: true
+        } else {
+            // Before Android 14 full-screen intents need no special permission.
+            true
+        }
+    }
 
     private fun alarmSoundTitle(rawUri: String?): String? {
         if (rawUri.isNullOrEmpty()) return null

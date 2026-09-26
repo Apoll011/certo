@@ -206,6 +206,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get alarmSoundSaved => 'Alarm sound saved';
 
   @override
+  String get alarmFullScreen => 'Full-screen alarms';
+
+  @override
+  String get alarmFullScreenOn => 'On — alarms open over the lock screen';
+
+  @override
+  String get alarmFullScreenOff => 'Off — tap to enable';
+
+  @override
+  String get alarmFullScreenEnabled => 'Full-screen alarms enabled';
+
+  @override
   String get addedToday => 'Added today';
 
   @override

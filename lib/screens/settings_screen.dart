@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/alarm_service.dart';
 import '../services/alarm_sound_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
@@ -110,6 +111,8 @@ class SettingsScreen extends StatelessWidget {
                   const SizedBox(height: 24),
                   _sectionLabel(l10n.alarm),
                   const _AlarmSoundTile(),
+                  const SizedBox(height: 10),
+                  const _FullScreenAlarmTile(),
                   const SizedBox(height: 24),
                   _sectionLabel(l10n.notifications),
                   AppCard(
@@ -422,6 +425,92 @@ class _AlarmSoundTileState extends State<_AlarmSoundTile> {
           const Icon(
             Icons.chevron_right_rounded,
             color: AppColors.textSecondary,
+            size: 26,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Settings tile showing whether full-screen alarms are allowed, and opening
+/// the Android permission page to enable them when they are not.
+class _FullScreenAlarmTile extends StatefulWidget {
+  const _FullScreenAlarmTile();
+
+  @override
+  State<_FullScreenAlarmTile> createState() => _FullScreenAlarmTileState();
+}
+
+class _FullScreenAlarmTileState extends State<_FullScreenAlarmTile> {
+  bool? _enabled;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final enabled = await AlarmService.canUseFullScreenIntent();
+    if (mounted) setState(() => _enabled = enabled);
+  }
+
+  Future<void> _onTap() async {
+    final l10n = AppLocalizations.of(context)!;
+    final messenger = ScaffoldMessenger.of(context);
+
+    final enabled = await AlarmService.requestFullScreenIntentPermission();
+    if (!mounted) return;
+    setState(() => _enabled = enabled);
+
+    if (enabled) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(l10n.alarmFullScreenEnabled),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final enabled = _enabled ?? true;
+
+    return AppCard(
+      onTap: _onTap,
+      child: Row(
+        children: [
+          Icon(
+            Icons.fullscreen_rounded,
+            color: enabled ? AppColors.success : AppColors.textSecondary,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(l10n.alarmFullScreen, style: AppTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  enabled
+                      ? l10n.alarmFullScreenOn
+                      : l10n.alarmFullScreenOff,
+                  style: AppTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            enabled
+                ? Icons.check_circle_rounded
+                : Icons.chevron_right_rounded,
+            color: enabled ? AppColors.success : AppColors.textSecondary,
             size: 26,
           ),
         ],

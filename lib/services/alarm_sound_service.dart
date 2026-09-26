@@ -70,4 +70,17 @@ class AlarmSoundService {
       await _channel.invokeMethod('stopAlarmSound');
     } catch (_) {}
   }
+
+  /// Whether the OS currently allows full-screen intents (Android 14+). On
+  /// other platforms/versions this is treated as allowed.
+  static Future<bool> canUseFullScreenIntent() async {
+    try {
+      return await _channel.invokeMethod<bool>('canUseFullScreenIntent') ??
+          true;
+    } on PlatformException {
+      return true;
+    } catch (_) {
+      return true;
+    }
+  }
 }

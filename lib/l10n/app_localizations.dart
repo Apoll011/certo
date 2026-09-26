@@ -446,6 +446,30 @@ abstract class AppLocalizations {
   /// **'Alarm sound saved'**
   String get alarmSoundSaved;
 
+  /// No description provided for @alarmFullScreen.
+  ///
+  /// In en, this message translates to:
+  /// **'Full-screen alarms'**
+  String get alarmFullScreen;
+
+  /// No description provided for @alarmFullScreenOn.
+  ///
+  /// In en, this message translates to:
+  /// **'On — alarms open over the lock screen'**
+  String get alarmFullScreenOn;
+
+  /// No description provided for @alarmFullScreenOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off — tap to enable'**
+  String get alarmFullScreenOff;
+
+  /// No description provided for @alarmFullScreenEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Full-screen alarms enabled'**
+  String get alarmFullScreenEnabled;
+
   /// No description provided for @addedToday.
   ///
   /// In en, this message translates to:

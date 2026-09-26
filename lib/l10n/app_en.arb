@@ -103,6 +103,10 @@
   "alarmSoundDefault": "Default alarm sound",
   "alarmSoundCustom": "Custom sound",
   "alarmSoundSaved": "Alarm sound saved",
+  "alarmFullScreen": "Full-screen alarms",
+  "alarmFullScreenOn": "On — alarms open over the lock screen",
+  "alarmFullScreenOff": "Off — tap to enable",
+  "alarmFullScreenEnabled": "Full-screen alarms enabled",
 
   "addedToday": "Added today",
   "addedYesterday": "Added yesterday",

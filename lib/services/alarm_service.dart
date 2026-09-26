@@ -37,6 +37,9 @@ class AlarmService {
 
   static bool _initialized = false;
 
+  /// Whether runtime permissions have been requested (activity must be live).
+  static bool _permissionsRequested = false;
+
   /// Launch details captured on cold start, when the app was (re)launched by
   /// the OS to deliver a full-screen alarm.
   static NotificationAppLaunchDetails? _launchDetails;
@@ -67,7 +70,12 @@ class AlarmService {
 
   static String? get alarmSoundUri => _alarmSoundUri;
 
-  /// Initializes the plugin, device timezone, and permissions. Idempotent.
+  /// Initializes the plugin and device timezone. Idempotent.
+  ///
+  /// This is safe to call from `main()` before `runApp()`: it only touches the
+  /// plugin's application context. Activity-dependent setup (runtime permission
+  /// requests and cold-start launch details) lives in [requestPermissions] and
+  /// [captureLaunchDetails], which must run after the activity is attached.
   static Future<void> init() async {
     if (_initialized) return;
     _initialized = true;
@@ -98,11 +106,6 @@ class AlarmService {
           AndroidFlutterLocalNotificationsPlugin
         >();
 
-    // Basic notification permission first; then try for a full-screen intent so
-    // the alarm can appear over the lock screen (Android 14+).
-    await android?.requestNotificationsPermission();
-    await android?.requestFullScreenIntentPermission();
-
     // Exact alarms may be unavailable (Android 12+ permission). Remember this
     // so scheduling can fall back to inexact alarms instead of failing.
     try {
@@ -117,12 +120,70 @@ class AlarmService {
     } catch (_) {
       _defaultAlarmUri = null;
     }
+  }
 
+  /// Captures the notification launch details on cold start. Must run after the
+  /// activity is attached, otherwise the plugin returns no launch details.
+  static Future<void> captureLaunchDetails() async {
+    await init();
     try {
       _launchDetails = await _plugin.getNotificationAppLaunchDetails();
     } catch (e) {
       debugPrint('Verifi: launch-details lookup failed — $e');
     }
+  }
+
+  /// Whether the app was launched by an alarm notification (cold start).
+  static bool get hasInitialPayload =>
+      _launchDetails?.notificationResponse?.payload != null;
+
+  /// Requests the runtime permissions alarms need (notifications and a
+  /// full-screen intent so the alarm opens over the lock screen). Runs once per
+  /// process; call only after the activity is attached.
+  static Future<void> requestPermissions() async {
+    await init();
+    if (_permissionsRequested) return;
+    _permissionsRequested = true;
+
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+
+    try {
+      await android?.requestNotificationsPermission();
+    } catch (e) {
+      debugPrint('Verifi: notification permission request failed — $e');
+    }
+    try {
+      await android?.requestFullScreenIntentPermission();
+    } catch (e) {
+      debugPrint('Verifi: full-screen-intent permission request failed — $e');
+    }
+    try {
+      _canScheduleExact =
+          await android?.canScheduleExactNotifications() ?? false;
+    } catch (_) {}
+  }
+
+  /// Whether the OS currently allows full-screen intents (Android 14+).
+  static Future<bool> canUseFullScreenIntent() =>
+      AlarmSoundService.canUseFullScreenIntent();
+
+  /// Opens the Android "full screen intents" permission page when needed, then
+  /// reports whether full-screen alarms are now allowed.
+  static Future<bool> requestFullScreenIntentPermission() async {
+    await init();
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    try {
+      await android?.requestFullScreenIntentPermission();
+    } catch (e) {
+      debugPrint('Verifi: full-screen-intent permission request failed — $e');
+    }
+    return canUseFullScreenIntent();
   }
 
   /// Opens the Android "Alarms & reminders" settings so the user can grant the
@@ -178,18 +239,15 @@ class AlarmService {
     await _plugin.cancelAll();
 
     final now = DateTime.now();
-    final mode = _scheduleMode();
     var id = 0;
     for (final m in meds) {
       if (m.status != MedicationStatus.active) continue;
       for (final at in upcomingOccurrences(m, now, days: 14)) {
-        await _plugin.zonedSchedule(
+        await _zonedSchedule(
           id: id++,
           title: m.name,
           body: m.dosageLine,
           scheduledDate: tz.TZDateTime.from(at, tz.local),
-          notificationDetails: _details(),
-          androidScheduleMode: mode,
           payload: jsonEncode({'medicationId': m.id, 'time': clock12(at)}),
         );
       }
@@ -200,15 +258,47 @@ class AlarmService {
   static Future<void> snooze(Medication m, String time, int minutes) async {
     await init();
     final at = DateTime.now().add(Duration(minutes: minutes));
-    await _plugin.zonedSchedule(
+    await _zonedSchedule(
       id: _snoozeId(m.id),
       title: m.name,
       body: m.dosageLine,
       scheduledDate: tz.TZDateTime.from(at, tz.local),
-      notificationDetails: _details(),
-      androidScheduleMode: _scheduleMode(),
       payload: jsonEncode({'medicationId': m.id, 'time': time}),
     );
+  }
+
+  /// Schedules one notification, falling back to inexact if the exact-alarm
+  /// permission was revoked after [init] ran.
+  static Future<void> _zonedSchedule({
+    required int id,
+    required String title,
+    required String body,
+    required tz.TZDateTime scheduledDate,
+    required String payload,
+  }) async {
+    try {
+      await _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: scheduledDate,
+        notificationDetails: _details(),
+        androidScheduleMode: _scheduleMode(),
+        payload: payload,
+      );
+    } catch (_) {
+      if (!_canScheduleExact) rethrow;
+      _canScheduleExact = false;
+      await _plugin.zonedSchedule(
+        id: id,
+        title: title,
+        body: body,
+        scheduledDate: scheduledDate,
+        notificationDetails: _details(),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: payload,
+      );
+    }
   }
 
   /// Cancels the one-off snooze reminder for a medication, if any.
@@ -239,7 +329,7 @@ class AlarmService {
   }
 
   static AndroidScheduleMode _scheduleMode() => _canScheduleExact
-      ? AndroidScheduleMode.exactAllowWhileIdle
+      ? AndroidScheduleMode.alarmClock
       : AndroidScheduleMode.inexactAllowWhileIdle;
 
   static NotificationDetails _details() {

@@ -68,6 +68,10 @@
   "alarmSoundDefault": "Som de alarme padrão",
   "alarmSoundCustom": "Som personalizado",
   "alarmSoundSaved": "Som do alarme salvo",
+  "alarmFullScreen": "Alarmes em tela cheia",
+  "alarmFullScreenOn": "Ativado — alarmes abrem sobre a tela de bloqueio",
+  "alarmFullScreenOff": "Desativado — toque para ativar",
+  "alarmFullScreenEnabled": "Alarmes em tela cheia ativados",
 
   "addedToday": "Adicionado hoje",
   "addedYesterday": "Adicionado ontem",

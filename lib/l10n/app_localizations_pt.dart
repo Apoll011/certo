@@ -206,6 +206,19 @@ class AppLocalizationsPt extends AppLocalizations {
   String get alarmSoundSaved => 'Som do alarme salvo';
 
   @override
+  String get alarmFullScreen => 'Alarmes em tela cheia';
+
+  @override
+  String get alarmFullScreenOn =>
+      'Ativado — alarmes abrem sobre a tela de bloqueio';
+
+  @override
+  String get alarmFullScreenOff => 'Desativado — toque para ativar';
+
+  @override
+  String get alarmFullScreenEnabled => 'Alarmes em tela cheia ativados';
+
+  @override
   String get addedToday => 'Adicionado hoje';
 
   @override

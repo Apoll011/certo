@@ -63,8 +63,9 @@ class _RootState extends State<_Root> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _afterFirstFrame());
   }
 
-  /// Bootstraps data, then routes to the alarm screen if the OS launched the
-  /// app to deliver a full-screen alarm (cold start).
+  /// Bootstraps data, captures the cold-start launch details (now that the
+  /// activity is attached), and routes to the alarm screen if the OS launched
+  /// the app to deliver a full-screen alarm.
   Future<void> _afterFirstFrame() async {
     try {
       await _state.bootstrap();
@@ -72,7 +73,18 @@ class _RootState extends State<_Root> {
       debugPrint('Verifi: bootstrap failed — $e');
     }
     if (!mounted) return;
-    _maybeOpenInitialAlarm();
+
+    await AlarmService.captureLaunchDetails();
+    if (!mounted) return;
+
+    if (AlarmService.hasInitialPayload) {
+      // An alarm fired on cold start: show it immediately rather than popping
+      // permission dialogs over it.
+      _maybeOpenInitialAlarm();
+    } else {
+      // Normal launch: ask for the runtime permissions alarms need.
+      await AlarmService.requestPermissions();
+    }
   }
 
   void _maybeOpenInitialAlarm() {
