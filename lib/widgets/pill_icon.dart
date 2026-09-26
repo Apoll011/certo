@@ -35,7 +35,7 @@ class PillIcon extends StatelessWidget {
           angle: -math.pi / 4,
           child: Container(
             width: size * 0.72,
-            height: size * 0.46,
+            height: size * 0.36,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(size),
               gradient: LinearGradient(

@@ -34,7 +34,7 @@ class OnboardingScreen extends StatelessWidget {
                         spread: 16,
                         child: const Center(
                           child: PillIcon(
-                            size: 92,
+                            size: 180,
                             color1: Colors.white,
                             color2: Color(0xFFE6E9F7),
                           ),
