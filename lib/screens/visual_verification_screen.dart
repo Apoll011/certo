@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:camera/camera.dart';
@@ -16,71 +17,81 @@ import '../state/app_state.dart';
 import '../utils/schedule.dart';
 import 'voice_mode_sheet.dart';
 
-/// Why visual mode was opened.
-enum VisualModeIntent {
-  /// Verify a package against the current schedule.
-  verify,
+export '../ai/tools/vision_tools.dart'
+    show VisualModeIntent, VisualModeRequest, VisualVerificationStatus;
 
-  /// Scan a package to add it as a new medication.
-  addMedication,
-}
-
-/// Entry helper to launch Visual Verification Mode.
+/// Opens Visual Mode. Prefer [VisualModeRequest] for AI / voice handoff.
 Future<void> showVisualVerificationScreen(
   BuildContext context, {
   Medication? targetMedication,
   String? expectedMedicationName,
   VisualModeIntent intent = VisualModeIntent.verify,
-  VisualVerificationStatus initialStatus = VisualVerificationStatus.identifying,
+  bool autoCapture = false,
+  int autoCaptureDelayMs = 1000,
+  String? prompt,
+  VisualModeRequest? request,
 }) {
+  final req = request ??
+      VisualModeRequest(
+        intent: intent,
+        expectedMedicationName: expectedMedicationName,
+        autoCapture: autoCapture,
+        autoCaptureDelayMs: autoCaptureDelayMs,
+        prompt: prompt,
+      );
   return Navigator.of(context).push<void>(
     MaterialPageRoute<void>(
       builder: (_) => VisualVerificationScreen(
         targetMedication: targetMedication,
-        expectedMedicationName: expectedMedicationName,
-        intent: intent,
-        initialStatus: initialStatus,
+        request: req,
       ),
       fullscreenDialog: true,
     ),
   );
 }
 
-/// Camera-first visual medication verification with DeepSeek vision + tools.
 class VisualVerificationScreen extends StatefulWidget {
   const VisualVerificationScreen({
     super.key,
     this.targetMedication,
-    this.expectedMedicationName,
-    this.intent = VisualModeIntent.verify,
-    this.initialStatus = VisualVerificationStatus.identifying,
+    this.request = const VisualModeRequest(),
   });
 
   final Medication? targetMedication;
-  final String? expectedMedicationName;
-  final VisualModeIntent intent;
-  final VisualVerificationStatus initialStatus;
+  final VisualModeRequest request;
+
+  VisualModeIntent get intent => request.intent;
 
   @override
   State<VisualVerificationScreen> createState() =>
       _VisualVerificationScreenState();
 }
 
-class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
+class _VisualVerificationScreenState extends State<VisualVerificationScreen>
+    with TickerProviderStateMixin {
   CameraController? _camera;
   bool _cameraReady = false;
   String? _cameraError;
   bool _flashOn = false;
   bool _isProcessing = false;
+  bool _scanning = false;
 
   late VisualVerificationStatus _status;
-
   String _identifiedName = '';
   String _category = '';
   String _matchMessage = '';
   String _expectedName = '';
   String _nextDoseTime = '';
   String _nextDoseInstruction = '';
+  String _dosage = '';
+  bool _canAdd = false;
+  bool _canConfirm = false;
+
+  final List<ChatMessage> _history = [];
+  final TextEditingController _replyCtrl = TextEditingController();
+  final FocusNode _replyFocus = FocusNode();
+  String? _pendingQuestion;
+  Completer<String>? _askCompleter;
 
   final ElevenLabsService _voice = ElevenLabsService();
   final AudioPlayer _player = AudioPlayer();
@@ -88,15 +99,20 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
   final List<int> _ttsBuffer = [];
   Completer<void>? _ttsDone;
 
+  late final AnimationController _scanCtrl;
+  Timer? _autoCaptureTimer;
+
   @override
   void initState() {
     super.initState();
-    _status = widget.initialStatus;
+    _status = VisualVerificationStatus.identifying;
+    _scanCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
     _voiceSub = _voice.events.listen(_onVoiceEvent);
     _player.onPlayerComplete.listen((_) {
-      if (_ttsDone != null && !_ttsDone!.isCompleted) {
-        _ttsDone!.complete();
-      }
+      if (_ttsDone != null && !_ttsDone!.isCompleted) _ttsDone!.complete();
     });
     _initFromSchedule();
     _initCamera();
@@ -110,9 +126,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
         _playTtsBuffer();
       case VoiceError(:final message):
         debugPrint('VisualMode TTS error: $message');
-        if (_ttsDone != null && !_ttsDone!.isCompleted) {
-          _ttsDone!.complete();
-        }
+        if (_ttsDone != null && !_ttsDone!.isCompleted) _ttsDone!.complete();
       default:
         break;
     }
@@ -120,9 +134,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
 
   Future<void> _playTtsBuffer() async {
     if (_ttsBuffer.isEmpty) {
-      if (_ttsDone != null && !_ttsDone!.isCompleted) {
-        _ttsDone!.complete();
-      }
+      if (_ttsDone != null && !_ttsDone!.isCompleted) _ttsDone!.complete();
       return;
     }
     final bytes = Uint8List.fromList(_ttsBuffer);
@@ -135,43 +147,45 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
       await _player.play(DeviceFileSource(tempFile.path));
     } catch (e) {
       debugPrint('VisualMode: playback failed: $e');
-      if (_ttsDone != null && !_ttsDone!.isCompleted) {
-        _ttsDone!.complete();
-      }
+      if (_ttsDone != null && !_ttsDone!.isCompleted) _ttsDone!.complete();
     }
   }
 
   void _initFromSchedule() {
     final appState = Provider.of<AppState>(context, listen: false);
-    final active = appState.medicationsWithStatus(MedicationStatus.active);
-
-    final target = widget.targetMedication ??
-        (active.isNotEmpty ? active.first : null);
-
-    final expectedOverride = widget.expectedMedicationName?.trim();
-    if (expectedOverride != null && expectedOverride.isNotEmpty) {
-      _expectedName = expectedOverride;
-      _identifiedName = expectedOverride;
-    } else if (target != null) {
-      _identifiedName = target.name;
+    final expected = widget.request.expectedMedicationName?.trim();
+    if (expected != null && expected.isNotEmpty) {
+      _expectedName = expected;
+      _identifiedName = expected;
+      return;
+    }
+    final target = widget.targetMedication;
+    if (target == null) {
+      final active = appState.medicationsWithStatus(MedicationStatus.active);
+      if (active.isNotEmpty) {
+        final m = active.first;
+        _expectedName = m.name;
+        _identifiedName = m.name;
+        _category = m.category;
+        _nextDoseTime = m.firstTime;
+        _nextDoseInstruction = m.dosageLine;
+        _dosage = m.dosage;
+      }
+    } else {
       _expectedName = target.name;
-      _category =
-          target.category.isNotEmpty ? target.category : 'Oral prescription';
+      _identifiedName = target.name;
+      _category = target.category;
       _nextDoseTime = target.firstTime;
       _nextDoseInstruction = target.dosageLine;
+      _dosage = target.dosage;
     }
-
-    // Prefer a dose that is due right now when no override was given.
-    if (expectedOverride == null || expectedOverride.isEmpty) {
+    if (widget.intent == VisualModeIntent.verify) {
       final dues = dueDoses(appState.medications, DateTime.now());
       if (dues.isNotEmpty) {
         final due = dues.first;
         _expectedName = due.medication.name;
         _nextDoseTime = due.time;
         _nextDoseInstruction = due.medication.dosageLine;
-        _category = due.medication.category.isNotEmpty
-            ? due.medication.category
-            : _category;
       }
     }
   }
@@ -185,13 +199,10 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
         }
         return;
       }
-
-      // Prefer back camera for package scanning.
       final cam = cameras.firstWhere(
         (c) => c.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
       );
-
       final controller = CameraController(
         cam,
         ResolutionPreset.medium,
@@ -205,23 +216,35 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
       }
       _camera = controller;
       setState(() => _cameraReady = true);
+
+      if (widget.request.autoCapture) {
+        final delay = Duration(
+          milliseconds: widget.request.autoCaptureDelayMs.clamp(300, 5000),
+        );
+        _autoCaptureTimer = Timer(delay, () {
+          if (mounted && !_isProcessing) _captureAndAnalyze();
+        });
+      }
     } catch (e) {
       debugPrint('VisualMode: camera init failed: $e');
-      if (mounted) {
-        setState(() => _cameraError = 'Camera unavailable: $e');
-      }
+      if (mounted) setState(() => _cameraError = 'Camera unavailable: $e');
     }
   }
 
   @override
   void dispose() {
+    _autoCaptureTimer?.cancel();
+    _scanCtrl.dispose();
     _voiceSub?.cancel();
     _camera?.dispose();
     _voice.dispose();
     _player.dispose();
-    if (_ttsDone != null && !_ttsDone!.isCompleted) {
-      _ttsDone!.complete();
+    _replyCtrl.dispose();
+    _replyFocus.dispose();
+    if (_askCompleter != null && !_askCompleter!.isCompleted) {
+      _askCompleter!.complete('');
     }
+    if (_ttsDone != null && !_ttsDone!.isCompleted) _ttsDone!.complete();
     super.dispose();
   }
 
@@ -233,8 +256,102 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
       await cam.setFlashMode(next ? FlashMode.torch : FlashMode.off);
       if (mounted) setState(() => _flashOn = next);
     } catch (e) {
-      debugPrint('VisualMode: flash toggle failed: $e');
+      debugPrint('VisualMode: flash failed: $e');
     }
+  }
+
+  String _promptForIntent() {
+    final extra = widget.request.prompt;
+    return switch (widget.intent) {
+      VisualModeIntent.addMedication =>
+        AiAssistantService.visualAddMedicationPrompt(extra: extra),
+      VisualModeIntent.identify =>
+        AiAssistantService.visualIdentifyPrompt(extra: extra),
+      VisualModeIntent.verify => AiAssistantService.visualVerificationPrompt(
+          expectedMedicationName:
+              _expectedName.isNotEmpty ? _expectedName : null,
+          extra: extra,
+        ),
+    };
+  }
+
+  Future<void> _speak(String text) async {
+    try {
+      _ttsBuffer.clear();
+      _ttsDone = Completer<void>();
+      await _voice.speak(text);
+      await _ttsDone!.future.timeout(
+        const Duration(seconds: 45),
+        onTimeout: () {},
+      );
+    } catch (e) {
+      debugPrint('VisualMode: TTS failed: $e');
+    } finally {
+      if (_ttsDone != null && !_ttsDone!.isCompleted) _ttsDone!.complete();
+      _ttsDone = null;
+    }
+  }
+
+  Future<String> _askUser(String question) async {
+    if (!mounted) return '';
+    setState(() {
+      _pendingQuestion = question;
+      _replyCtrl.clear();
+    });
+    // Also speak the question so the user hears it.
+    unawaited(_speak(question));
+    _askCompleter = Completer<String>();
+    _replyFocus.requestFocus();
+    final answer = await _askCompleter!.future;
+    if (mounted) {
+      setState(() => _pendingQuestion = null);
+    }
+    return answer;
+  }
+
+  void _applyCard(VisualVerificationCardData data) {
+    setState(() {
+      _status = data.status == VisualVerificationStatus.identifying
+          ? VisualVerificationStatus.uncertain
+          : data.status;
+      if (data.identifiedMedicationName != null) {
+        _identifiedName = data.identifiedMedicationName!;
+      }
+      if (data.category != null) _category = data.category!;
+      if (data.message != null) _matchMessage = data.message!;
+      if (data.expectedMedicationName != null) {
+        _expectedName = data.expectedMedicationName!;
+      }
+      if (data.nextDoseTime != null) _nextDoseTime = data.nextDoseTime!;
+      if (data.nextDoseInstruction != null) {
+        _nextDoseInstruction = data.nextDoseInstruction!;
+      }
+      if (data.dosage != null) _dosage = data.dosage!;
+      _canAdd = data.canAdd;
+      _canConfirm = data.canConfirm;
+    });
+  }
+
+  AiAssistantService _buildAssistant(AppState appState) {
+    return appState.createAiAssistant(
+      systemPrompt: AiAssistantService.defaultSystemPrompt(
+        userName: appState.userName,
+        now: DateTime.now(),
+        visualMode: true,
+        visualIntent: widget.intent,
+        voiceMode: true,
+      ),
+      onSpeak: _speak,
+      onAskUser: _askUser,
+      onShowVisualResult: _applyCard,
+      onCapturePhoto: () async {
+        if (!_isProcessing) await _captureAndAnalyze();
+      },
+      onStartVisualMode: (_) async {
+        // Already in visual mode — ignore / recapture.
+        if (!_isProcessing) await _captureAndAnalyze();
+      },
+    );
   }
 
   Future<void> _captureAndAnalyze() async {
@@ -247,101 +364,55 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
     if (!AppConfig.hasAiApiKey) {
       setState(() {
         _cameraError =
-            'DeepSeek API key missing. Add AI_API_KEY to .env and restart with --dart-define-from-file=.env';
+            'DeepSeek API key missing. Add AI_API_KEY to .env and restart.';
       });
       return;
     }
 
     setState(() {
       _isProcessing = true;
+      _scanning = true;
       _status = VisualVerificationStatus.identifying;
       _cameraError = null;
+      _pendingQuestion = null;
     });
+    _scanCtrl.repeat();
 
     final appState = Provider.of<AppState>(context, listen: false);
 
     try {
       final file = await cam.takePicture();
       final bytes = await File(file.path).readAsBytes();
-      // Keep payload reasonable for the API.
       final b64 = base64Encode(bytes);
-
       if (!mounted) return;
 
       VisualVerificationCardData? card;
-
-      final assistant = appState.createAiAssistant(
-        systemPrompt: AiAssistantService.defaultSystemPrompt(
-          userName: appState.userName,
-          now: DateTime.now(),
-          voiceMode: true,
+      final assistant = _buildAssistant(appState);
+      // Capture card via wrapper since createAiAssistant already wires callback.
+      assistant.tools.register(
+        ShowVisualVerificationResultTool(
+          onShowResult: (data) {
+            card = data;
+            _applyCard(data);
+          },
         ),
-        onSpeak: (text) async {
-          try {
-            _ttsBuffer.clear();
-            _ttsDone = Completer<void>();
-            await _voice.speak(text);
-            await _ttsDone!.future.timeout(
-              const Duration(seconds: 45),
-              onTimeout: () {},
-            );
-          } catch (e) {
-            debugPrint('VisualMode: TTS failed: $e');
-          } finally {
-            if (_ttsDone != null && !_ttsDone!.isCompleted) {
-              _ttsDone!.complete();
-            }
-            _ttsDone = null;
-          }
-        },
-        onShowVisualResult: (data) {
-          card = data;
-          if (!mounted) return;
-          setState(() {
-            _status = data.status == VisualVerificationStatus.identifying
-                ? VisualVerificationStatus.uncertain
-                : data.status;
-            if (data.identifiedMedicationName != null) {
-              _identifiedName = data.identifiedMedicationName!;
-            }
-            if (data.category != null) _category = data.category!;
-            if (data.message != null) _matchMessage = data.message!;
-            if (data.expectedMedicationName != null) {
-              _expectedName = data.expectedMedicationName!;
-            }
-            if (data.nextDoseTime != null) {
-              _nextDoseTime = data.nextDoseTime!;
-            }
-            if (data.nextDoseInstruction != null) {
-              _nextDoseInstruction = data.nextDoseInstruction!;
-            }
-          });
-        },
       );
-
-      final prompt = widget.intent == VisualModeIntent.addMedication
-          ? AiAssistantService.visualAddMedicationPrompt()
-          : AiAssistantService.visualVerificationPrompt(
-              expectedMedicationName:
-                  _expectedName.isNotEmpty ? _expectedName : null,
-            );
 
       final result = await assistant.verifyMedicationImage(
         imageBase64: b64,
-        userPrompt: prompt,
+        userPrompt: _promptForIntent(),
+        history: List<ChatMessage>.of(_history),
       );
 
-      if (!mounted) return;
+      _history
+        ..clear()
+        ..addAll(result.updatedHistory.where((m) => m.role != 'system'));
 
-      if (card == null) {
-        // Model forgot the tool — fall back to uncertain + any text reply.
+      if (!mounted) return;
+      if (card == null && result.response.trim().isNotEmpty) {
         setState(() {
           _status = VisualVerificationStatus.uncertain;
-          _matchMessage = result.response.trim().isNotEmpty
-              ? result.response.trim()
-              : widget.intent == VisualModeIntent.addMedication
-                  ? 'I couldn\'t read the package clearly. Please try again.'
-                  : 'I couldn\'t verify this confidently. Please try again.';
+          _matchMessage = result.response.trim();
         });
       }
     } catch (e) {
@@ -350,24 +421,58 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
         setState(() {
           _status = VisualVerificationStatus.uncertain;
           _matchMessage = 'Analysis failed: $e';
-          _cameraError = e.toString();
         });
       }
+    } finally {
+      _scanCtrl.stop();
+      _scanCtrl.reset();
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _scanning = false;
+        });
+      }
+    }
+  }
+
+  /// Follow-up conversation turn (text) after a photo analysis.
+  Future<void> _sendFollowUp(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || _isProcessing) return;
+    if (_askCompleter != null && !_askCompleter!.isCompleted) {
+      _askCompleter!.complete(trimmed);
+      _replyCtrl.clear();
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+    final appState = Provider.of<AppState>(context, listen: false);
+    try {
+      final assistant = _buildAssistant(appState);
+      final result = await assistant.sendMessage(
+        trimmed,
+        history: List<ChatMessage>.of(_history),
+      );
+      _history
+        ..clear()
+        ..addAll(result.updatedHistory.where((m) => m.role != 'system'));
+    } catch (e) {
+      debugPrint('VisualMode follow-up error: $e');
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
   }
 
-  void _onConfirmDose() {
+  void _onConfirm() {
     final appState = Provider.of<AppState>(context, listen: false);
-    if (widget.intent == VisualModeIntent.addMedication) {
-      // AI should already have called create_medication; confirm and close.
+    if (widget.intent == VisualModeIntent.addMedication ||
+        _status == VisualVerificationStatus.identified) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             _identifiedName.isNotEmpty
-                ? '✓ "$_identifiedName" ready.'
-                : '✓ Done.',
+                ? '✓ "$_identifiedName"'
+                : '✓ Done',
           ),
           backgroundColor: const Color(0xFF15803D),
           behavior: SnackBarBehavior.floating,
@@ -376,26 +481,29 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
       Navigator.of(context).pop();
       return;
     }
-
     final med = findMedication(
       appState,
       name: _identifiedName.isNotEmpty ? _identifiedName : _expectedName,
     );
-    if (med != null) {
-      appState.markTaken(med.id);
-    }
+    if (med != null) appState.markTaken(med.id);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          med != null
-              ? '✓ Marked "${med.name}" as taken.'
-              : '✓ Confirmed.',
+          med != null ? '✓ Marked "${med.name}" as taken.' : '✓ Confirmed.',
         ),
         backgroundColor: const Color(0xFF15803D),
         behavior: SnackBarBehavior.floating,
       ),
     );
     Navigator.of(context).pop();
+  }
+
+  Future<void> _onAddMedication() async {
+    // Kick a follow-up so AI creates it, or open add flow with name prefilled.
+    await _sendFollowUp(
+      'Please add "$_identifiedName"${_dosage.isNotEmpty ? ' $_dosage' : ''} '
+      'to my medications. Ask me if you need the times.',
+    );
   }
 
   void _openVoiceMode() {
@@ -412,21 +520,33 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
   }
 
   void _resetToScan() {
+    if (_askCompleter != null && !_askCompleter!.isCompleted) {
+      _askCompleter!.complete('');
+    }
     setState(() {
       _status = VisualVerificationStatus.identifying;
       _isProcessing = false;
       _matchMessage = '';
+      _pendingQuestion = null;
+      _canAdd = false;
     });
   }
 
+  String get _hintText => switch (widget.intent) {
+        VisualModeIntent.addMedication => 'Scan the package to add it',
+        VisualModeIntent.identify => 'Point at any medication package',
+        VisualModeIntent.verify => 'Point at the medication package',
+      };
+
   @override
   Widget build(BuildContext context) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: true,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ── Live camera preview ─────────────────────────────────────────
           if (_cameraReady && _camera != null)
             FittedBox(
               fit: BoxFit.cover,
@@ -448,34 +568,42 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
                       child: Text(
                         _cameraError!,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white70, fontSize: 15),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 15,
+                        ),
                       ),
                     )
                   : const CircularProgressIndicator(color: Color(0xFF3366FF)),
             ),
 
-          // Dim overlay while processing
-          if (_isProcessing)
-            Container(color: Colors.black.withValues(alpha: 0.35)),
+          // Google Lens-style scan glow
+          if (_scanning)
+            AnimatedBuilder(
+              animation: _scanCtrl,
+              builder: (_, _) => CustomPaint(
+                painter: _LensScanPainter(progress: _scanCtrl.value),
+                child: const SizedBox.expand(),
+              ),
+            ),
 
-          // ── Top controls ────────────────────────────────────────────────
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
-                  _RoundHeaderBtn(
+                  _RoundBtn(
                     icon: Icons.close_rounded,
                     onTap: () => Navigator.of(context).pop(),
                   ),
                   const Spacer(),
-                  _RoundHeaderBtn(
+                  _RoundBtn(
                     icon: Icons.mic_rounded,
                     onTap: _openVoiceMode,
                     tooltip: 'Voice mode',
                   ),
                   const SizedBox(width: 10),
-                  _RoundHeaderBtn(
+                  _RoundBtn(
                     icon: _flashOn
                         ? Icons.flash_on_rounded
                         : Icons.flash_off_rounded,
@@ -486,16 +614,15 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
             ),
           ),
 
-          // Hint when idle
           if (_status == VisualVerificationStatus.identifying && !_isProcessing)
             Positioned(
               top: MediaQuery.of(context).padding.top + 72,
               left: 24,
               right: 24,
               child: Text(
-                widget.intent == VisualModeIntent.addMedication
-                    ? 'Scan the package to add it'
-                    : 'Point at the medication package',
+                widget.request.autoCapture
+                    ? 'Hold steady — capturing…'
+                    : _hintText,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
@@ -506,34 +633,40 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
               ),
             ),
 
-          // ── Bottom sheet ────────────────────────────────────────────────
           Align(
             alignment: Alignment.bottomCenter,
-            child: _VerificationBottomSheet(
+            child: _ResultSheet(
               status: _status,
               isProcessing: _isProcessing,
-              isAddMode: widget.intent == VisualModeIntent.addMedication,
-              identifiedName: _identifiedName.isNotEmpty
-                  ? _identifiedName
-                  : 'Medication',
+              intent: widget.intent,
+              identifiedName:
+                  _identifiedName.isNotEmpty ? _identifiedName : 'Medication',
               category: _category.isNotEmpty ? _category : 'Prescription',
+              dosage: _dosage,
               matchMessage: _matchMessage.isNotEmpty
                   ? _matchMessage
-                  : widget.intent == VisualModeIntent.addMedication
-                      ? 'Package identified. Ready to add.'
-                      : 'This is your medication. It\'s scheduled for now.',
+                  : 'Analyzing package…',
               expectedName:
                   _expectedName.isNotEmpty ? _expectedName : 'Scheduled dose',
-              nextDoseTime:
-                  _nextDoseTime.isNotEmpty ? _nextDoseTime : '—',
-              nextDoseInstruction: _nextDoseInstruction.isNotEmpty
-                  ? _nextDoseInstruction
-                  : '',
+              nextDoseTime: _nextDoseTime.isNotEmpty ? _nextDoseTime : '—',
+              nextDoseInstruction: _nextDoseInstruction,
+              canAdd: _canAdd,
+              canConfirm: _canConfirm,
+              pendingQuestion: _pendingQuestion,
+              replyController: _replyCtrl,
+              replyFocus: _replyFocus,
+              bottomPad: bottomPad,
               onCapture: _captureAndAnalyze,
-              onConfirm: _onConfirmDose,
+              onConfirm: _onConfirm,
+              onAdd: _onAddMedication,
               onScanAnother: _resetToScan,
               onTryAgain: _resetToScan,
               onOpenVoice: _openVoiceMode,
+              onSubmitReply: () {
+                final t = _replyCtrl.text;
+                _replyCtrl.clear();
+                _sendFollowUp(t);
+              },
             ),
           ),
         ],
@@ -542,120 +675,237 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Bottom sheet (3-state Certo safety model)
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Lens scan painter ───────────────────────────────────────────────────────
 
-class _VerificationBottomSheet extends StatelessWidget {
-  const _VerificationBottomSheet({
+class _LensScanPainter extends CustomPainter {
+  _LensScanPainter({required this.progress});
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final y = size.height * progress;
+
+    // Soft edge glows
+    final edgePaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          const Color(0xFF3366FF).withValues(alpha: 0.35 * (1 - (progress - 0.5).abs() * 2).clamp(0.0, 1.0)),
+          Colors.transparent,
+          const Color(0xFF8B6BF6).withValues(alpha: 0.3),
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), edgePaint);
+
+    // Sweeping band
+    final bandH = size.height * 0.18;
+    final bandRect = Rect.fromLTWH(0, y - bandH / 2, size.width, bandH);
+    final bandPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Colors.transparent,
+          const Color(0xFF5B8CFF).withValues(alpha: 0.25),
+          Colors.white.withValues(alpha: 0.55),
+          const Color(0xFF5B8CFF).withValues(alpha: 0.25),
+          Colors.transparent,
+        ],
+      ).createShader(bandRect);
+    canvas.drawRect(bandRect, bandPaint);
+
+    // Bright scan line
+    final linePaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.9)
+      ..strokeWidth = 2
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
+
+    // Side pulse bars
+    final sideAlpha = (math.sin(progress * math.pi * 2) * 0.5 + 0.5) * 0.45;
+    final sidePaint = Paint()
+      ..shader = LinearGradient(
+        colors: [
+          const Color(0xFF3366FF).withValues(alpha: sideAlpha),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, 28, size.height));
+    canvas.drawRect(Rect.fromLTWH(0, 0, 28, size.height), sidePaint);
+    canvas.drawRect(
+      Rect.fromLTWH(size.width - 28, 0, 28, size.height),
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.centerRight,
+          end: Alignment.centerLeft,
+          colors: [
+            const Color(0xFF8B6BF6).withValues(alpha: sideAlpha),
+            Colors.transparent,
+          ],
+        ).createShader(Rect.fromLTWH(size.width - 28, 0, 28, size.height)),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _LensScanPainter old) =>
+      old.progress != progress;
+}
+
+// ─── Bottom sheet ────────────────────────────────────────────────────────────
+
+class _ResultSheet extends StatelessWidget {
+  const _ResultSheet({
     required this.status,
     required this.isProcessing,
-    required this.isAddMode,
+    required this.intent,
     required this.identifiedName,
     required this.category,
+    required this.dosage,
     required this.matchMessage,
     required this.expectedName,
     required this.nextDoseTime,
     required this.nextDoseInstruction,
+    required this.canAdd,
+    required this.canConfirm,
+    required this.pendingQuestion,
+    required this.replyController,
+    required this.replyFocus,
+    required this.bottomPad,
     required this.onCapture,
     required this.onConfirm,
+    required this.onAdd,
     required this.onScanAnother,
     required this.onTryAgain,
     required this.onOpenVoice,
+    required this.onSubmitReply,
   });
 
   final VisualVerificationStatus status;
   final bool isProcessing;
-  final bool isAddMode;
+  final VisualModeIntent intent;
   final String identifiedName;
   final String category;
+  final String dosage;
   final String matchMessage;
   final String expectedName;
   final String nextDoseTime;
   final String nextDoseInstruction;
+  final bool canAdd;
+  final bool canConfirm;
+  final String? pendingQuestion;
+  final TextEditingController replyController;
+  final FocusNode replyFocus;
+  final double bottomPad;
   final VoidCallback onCapture;
   final VoidCallback onConfirm;
+  final VoidCallback onAdd;
   final VoidCallback onScanAnother;
   final VoidCallback onTryAgain;
   final VoidCallback onOpenVoice;
+  final VoidCallback onSubmitReply;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.58,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(28),
-          topRight: Radius.circular(28),
-        ),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         boxShadow: [
           BoxShadow(
-            color: Color(0x33000000),
-            blurRadius: 28,
+            color: Color(0x40000000),
+            blurRadius: 32,
             offset: Offset(0, -8),
           ),
         ],
       ),
-      padding: EdgeInsets.fromLTRB(
-        24,
-        12,
-        24,
-        20 + MediaQuery.of(context).padding.bottom,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 5,
-            margin: const EdgeInsets.only(bottom: 18),
-            decoration: BoxDecoration(
-              color: const Color(0xFFD1D5DB),
-              borderRadius: BorderRadius.circular(3),
+      padding: EdgeInsets.fromLTRB(22, 12, 22, 14 + bottomPad),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 5,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFD1D5DB),
+                borderRadius: BorderRadius.circular(3),
+              ),
             ),
-          ),
-          switch (status) {
-            VisualVerificationStatus.identifying => _buildIdentifyingState(),
-            VisualVerificationStatus.confirmedMatch =>
-              _buildConfirmedMatchState(),
-            VisualVerificationStatus.confirmedMismatch =>
-              _buildConfirmedMismatchState(),
-            VisualVerificationStatus.uncertain => _buildUncertainState(),
-          },
-        ],
+            if (pendingQuestion != null) ...[
+              _AskBanner(
+                question: pendingQuestion!,
+                controller: replyController,
+                focusNode: replyFocus,
+                onSubmit: onSubmitReply,
+              ),
+              const SizedBox(height: 12),
+            ],
+            switch (status) {
+              VisualVerificationStatus.identifying => _identifying(),
+              VisualVerificationStatus.confirmedMatch ||
+              VisualVerificationStatus.identified =>
+                _successCard(
+                  badge: intent == VisualModeIntent.addMedication
+                      ? 'Ready to add'
+                      : status == VisualVerificationStatus.identified
+                          ? 'Identified'
+                          : 'Match',
+                  primaryLabel: canConfirm
+                      ? (intent == VisualModeIntent.addMedication
+                          ? 'Done'
+                          : 'Confirm taken')
+                      : 'OK',
+                  showNextDose: status == VisualVerificationStatus.confirmedMatch ||
+                      (status == VisualVerificationStatus.identified &&
+                          nextDoseTime != '—'),
+                ),
+              VisualVerificationStatus.notInList => _notInList(),
+              VisualVerificationStatus.confirmedMismatch => _mismatch(),
+              VisualVerificationStatus.uncertain => _uncertain(),
+            },
+            // Always allow follow-up chat when not mid-ask
+            if (pendingQuestion == null &&
+                status != VisualVerificationStatus.identifying) ...[
+              const SizedBox(height: 10),
+              _FollowUpField(
+                controller: replyController,
+                focusNode: replyFocus,
+                onSubmit: onSubmitReply,
+                enabled: !isProcessing,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildIdentifyingState() {
+  Widget _identifying() {
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            isProcessing
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.4,
-                      color: Color(0xFF3366FF),
-                    ),
-                  )
-                : const Icon(
-                    Icons.auto_awesome_rounded,
-                    color: Color(0xFF3366FF),
-                    size: 22,
-                  ),
+            if (isProcessing)
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.4,
+                  color: Color(0xFF3366FF),
+                ),
+              )
+            else
+              const Icon(Icons.auto_awesome_rounded,
+                  color: Color(0xFF3366FF), size: 22),
             const SizedBox(width: 10),
             Text(
-              isProcessing
-                  ? 'Analyzing with AI…'
-                  : isAddMode
-                      ? 'Ready to add'
-                      : 'Ready to scan',
+              isProcessing ? 'Scanning…' : 'Ready',
               style: const TextStyle(
                 fontSize: 19,
                 fontWeight: FontWeight.w800,
@@ -667,16 +917,12 @@ class _VerificationBottomSheet extends StatelessWidget {
         const SizedBox(height: 8),
         Text(
           isProcessing
-              ? (isAddMode
-                  ? 'Reading the package to add it to your list.'
-                  : 'Checking the package against your schedule.')
-              : (isAddMode
-                  ? 'Tap to capture the package label.'
-                  : 'Tap to capture and verify.'),
+              ? 'Reading the package with AI'
+              : 'Tap to capture, or wait for auto-capture',
           textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 15, color: Color(0xFF64748B), height: 1.35),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
         ),
-        const SizedBox(height: 22),
+        const SizedBox(height: 20),
         GestureDetector(
           onTap: isProcessing ? null : onCapture,
           child: Container(
@@ -687,9 +933,8 @@ class _VerificationBottomSheet extends StatelessWidget {
               border: Border.all(color: const Color(0xFF3366FF), width: 4),
               boxShadow: [
                 BoxShadow(
-                  color: const Color(0xFF3366FF).withValues(alpha: 0.25),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
+                  color: const Color(0xFF3366FF).withValues(alpha: 0.3),
+                  blurRadius: 18,
                 ),
               ],
             ),
@@ -704,25 +949,21 @@ class _VerificationBottomSheet extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 14),
         TextButton.icon(
           onPressed: onOpenVoice,
           icon: const Icon(Icons.mic_rounded, size: 18),
-          label: const Text('Ask with voice instead'),
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF3366FF),
-            textStyle: const TextStyle(fontWeight: FontWeight.w600),
-          ),
+          label: const Text('Ask with voice'),
         ),
       ],
     );
   }
 
-  Widget _buildConfirmedMatchState() {
-    final confirmLabel = isAddMode ? 'Done' : 'Confirm taken';
-    final badgeLabel = isAddMode ? 'Ready to add' : 'Identified';
+  Widget _successCard({
+    required String badge,
+    required String primaryLabel,
+    required bool showNextDose,
+  }) {
     return Column(
-      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
@@ -735,172 +976,44 @@ class _VerificationBottomSheet extends StatelessWidget {
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF0F172A),
-                  letterSpacing: -0.4,
                   height: 1.15,
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8F8F0),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF86EFAC)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: Color(0xFF15803D),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    badgeLabel,
-                    style: const TextStyle(
-                      color: Color(0xFF15803D),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _Badge(label: badge, color: const Color(0xFF15803D)),
           ],
         ),
         const SizedBox(height: 4),
         Text(
-          category,
+          [
+            if (dosage.isNotEmpty) dosage,
+            if (category.isNotEmpty) category,
+          ].join(' · '),
           style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
         ),
-        const SizedBox(height: 14),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-          decoration: BoxDecoration(
-            color: const Color(0xFFEAF8F1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFBBF7D0)),
-          ),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.check_circle_rounded,
-                color: Color(0xFF15803D),
-                size: 22,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  matchMessage,
-                  style: const TextStyle(
-                    color: Color(0xFF166534),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    height: 1.35,
-                  ),
-                ),
-              ),
-            ],
-          ),
+        const SizedBox(height: 12),
+        _InfoBanner(
+          color: const Color(0xFFEAF8F1),
+          border: const Color(0xFFBBF7D0),
+          icon: Icons.check_circle_rounded,
+          iconColor: const Color(0xFF15803D),
+          text: matchMessage,
+          textColor: const Color(0xFF166534),
         ),
-        if (!isAddMode) ...[
-          const SizedBox(height: 14),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'NEXT DOSE',
-                  style: TextStyle(
-                    color: Color(0xFF64748B),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.access_time_filled_rounded,
-                      color: Color(0xFF3366FF),
-                      size: 18,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      nextDoseTime,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      nextDoseInstruction,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF64748B),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
+        if (showNextDose) ...[
+          const SizedBox(height: 12),
+          _NextDoseCard(time: nextDoseTime, instruction: nextDoseInstruction),
         ],
-        const SizedBox(height: 18),
-        SizedBox(
-          width: double.infinity,
-          height: 54,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3366FF),
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            onPressed: onConfirm,
-            child: Text(
-              confirmLabel,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ),
+        const SizedBox(height: 16),
+        _PrimaryBtn(label: primaryLabel, onTap: onConfirm),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            TextButton(
-              onPressed: onScanAnother,
-              child: const Text(
-                'Scan another',
-                style: TextStyle(
-                  color: Color(0xFF3366FF),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+            TextButton(onPressed: onScanAnother, child: const Text('Scan another')),
             TextButton.icon(
               onPressed: onOpenVoice,
               icon: const Icon(Icons.mic_rounded, size: 16),
               label: const Text('Voice'),
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF64748B),
-              ),
             ),
           ],
         ),
@@ -908,9 +1021,48 @@ class _VerificationBottomSheet extends StatelessWidget {
     );
   }
 
-  Widget _buildConfirmedMismatchState() {
+  Widget _notInList() {
     return Column(
-      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.medication_outlined, size: 40, color: Color(0xFF3366FF)),
+        const SizedBox(height: 10),
+        Text(
+          identifiedName,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          matchMessage.isNotEmpty
+              ? matchMessage
+              : 'This isn\'t in your medication list yet.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+        ),
+        if (dosage.isNotEmpty || category.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            [dosage, category].where((s) => s.isNotEmpty).join(' · '),
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF334155),
+            ),
+          ),
+        ],
+        const SizedBox(height: 18),
+        if (canAdd) _PrimaryBtn(label: 'Add to my medications', onTap: onAdd),
+        TextButton(onPressed: onTryAgain, child: const Text('Scan again')),
+      ],
+    );
+  }
+
+  Widget _mismatch() {
+    return Column(
       children: [
         Container(
           width: 56,
@@ -918,120 +1070,47 @@ class _VerificationBottomSheet extends StatelessWidget {
           decoration: BoxDecoration(
             color: const Color(0xFFF04438),
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFF04438).withValues(alpha: 0.35),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
           child: const Icon(Icons.warning_rounded, color: Colors.white, size: 30),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         const Text(
           'Not your medication',
           style: TextStyle(
-            fontSize: 24,
+            fontSize: 22,
             fontWeight: FontWeight.w800,
             color: Color(0xFF0F172A),
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          matchMessage.isNotEmpty
-              ? matchMessage
-              : 'This isn\'t the medication scheduled for now. Please scan another package.',
+          matchMessage,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 15,
-            color: Color(0xFF64748B),
-            height: 1.4,
-          ),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
         ),
-        const SizedBox(height: 18),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFEF2F2),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFFECACA)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'YOU NEED',
-                style: TextStyle(
-                  color: Color(0xFFB91C1C),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      expectedName,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF0F172A),
-                      ),
-                    ),
-                  ),
-                  Text(
-                    nextDoseInstruction,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF64748B),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+        const SizedBox(height: 14),
+        _InfoBanner(
+          color: const Color(0xFFFEF2F2),
+          border: const Color(0xFFFECACA),
+          icon: Icons.medication_rounded,
+          iconColor: const Color(0xFFB91C1C),
+          text: 'You need: $expectedName'
+              '${nextDoseInstruction.isNotEmpty ? ' · $nextDoseInstruction' : ''}',
+          textColor: const Color(0xFF7F1D1D),
         ),
-        const SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          height: 54,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3366FF),
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            onPressed: onTryAgain,
-            child: const Text(
-              'Try again',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ),
+        const SizedBox(height: 16),
+        _PrimaryBtn(label: 'Try again', onTap: onTryAgain),
         TextButton.icon(
           onPressed: onOpenVoice,
           icon: const Icon(Icons.mic_rounded, size: 18),
-          label: const Text('Continue in voice mode'),
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF3366FF),
-            textStyle: const TextStyle(fontWeight: FontWeight.w600),
-          ),
+          label: const Text('Continue in voice'),
         ),
       ],
     );
   }
 
-  Widget _buildUncertainState() {
+  Widget _uncertain() {
     return Column(
-      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 56,
@@ -1039,73 +1118,329 @@ class _VerificationBottomSheet extends StatelessWidget {
           decoration: BoxDecoration(
             color: const Color(0xFF8B6BF6),
             borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF8B6BF6).withValues(alpha: 0.35),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
-          child: const Icon(Icons.help_outline_rounded, color: Colors.white, size: 30),
+          child:
+              const Icon(Icons.help_outline_rounded, color: Colors.white, size: 30),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 14),
         const Text(
           'I\'m not sure',
           style: TextStyle(
-            fontSize: 24,
+            fontSize: 22,
             fontWeight: FontWeight.w800,
             color: Color(0xFF0F172A),
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          matchMessage.isNotEmpty
-              ? matchMessage
-              : 'I can\'t identify this medication confidently. Please move closer and scan again.',
+          matchMessage,
           textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 15,
-            color: Color(0xFF64748B),
-            height: 1.4,
-          ),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
         ),
-        const SizedBox(height: 22),
-        SizedBox(
-          width: double.infinity,
-          height: 54,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3366FF),
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            onPressed: onTryAgain,
-            child: const Text(
-              'Try again',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ),
+        const SizedBox(height: 18),
+        _PrimaryBtn(label: 'Try again', onTap: onTryAgain),
         TextButton.icon(
           onPressed: onOpenVoice,
           icon: const Icon(Icons.mic_rounded, size: 18),
-          label: const Text('Describe it with voice'),
-          style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFF3366FF),
-            textStyle: const TextStyle(fontWeight: FontWeight.w600),
-          ),
+          label: const Text('Describe with voice'),
         ),
       ],
     );
   }
 }
 
-class _RoundHeaderBtn extends StatelessWidget {
-  const _RoundHeaderBtn({
+class _AskBanner extends StatelessWidget {
+  const _AskBanner({
+    required this.question,
+    required this.controller,
+    required this.focusNode,
+    required this.onSubmit,
+  });
+
+  final String question;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFC7D2FE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Certo asks',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF4338CA),
+              letterSpacing: 0.4,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            question,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E1B4B),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: (_) => onSubmit(),
+                  decoration: InputDecoration(
+                    hintText: 'Type your answer…',
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton.filled(
+                onPressed: onSubmit,
+                style: IconButton.styleFrom(
+                  backgroundColor: const Color(0xFF3366FF),
+                ),
+                icon: const Icon(Icons.send_rounded, color: Colors.white),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FollowUpField extends StatelessWidget {
+  const _FollowUpField({
+    required this.controller,
+    required this.focusNode,
+    required this.onSubmit,
+    required this.enabled,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final VoidCallback onSubmit;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            focusNode: focusNode,
+            enabled: enabled,
+            textInputAction: TextInputAction.send,
+            onSubmitted: (_) => onSubmit(),
+            decoration: InputDecoration(
+              hintText: 'Ask a follow-up…',
+              filled: true,
+              fillColor: const Color(0xFFF8FAFC),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        IconButton.filled(
+          onPressed: enabled ? onSubmit : null,
+          style: IconButton.styleFrom(backgroundColor: const Color(0xFF3366FF)),
+          icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+        ),
+      ],
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.label, required this.color});
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoBanner extends StatelessWidget {
+  const _InfoBanner({
+    required this.color,
+    required this.border,
+    required this.icon,
+    required this.iconColor,
+    required this.text,
+    required this.textColor,
+  });
+
+  final Color color;
+  final Color border;
+  final IconData icon;
+  final Color iconColor;
+  final String text;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: iconColor, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NextDoseCard extends StatelessWidget {
+  const _NextDoseCard({required this.time, required this.instruction});
+  final String time;
+  final String instruction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'NEXT DOSE',
+            style: TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.access_time_filled_rounded,
+                  color: Color(0xFF3366FF), size: 18),
+              const SizedBox(width: 8),
+              Text(
+                time,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                instruction,
+                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PrimaryBtn extends StatelessWidget {
+  const _PrimaryBtn({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 52,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF3366FF),
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        onPressed: onTap,
+        child: Text(
+          label,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoundBtn extends StatelessWidget {
+  const _RoundBtn({
     required this.icon,
     required this.onTap,
     this.tooltip,

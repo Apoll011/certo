@@ -67,6 +67,9 @@ class AddMedicationScreen extends StatelessWidget {
                     onTap: () => showVisualVerificationScreen(
                       context,
                       intent: VisualModeIntent.addMedication,
+                      autoCapture: true,
+                      autoCaptureDelayMs: 1000,
+                      prompt: 'User opened Add Medication → Scan package.',
                     ),
                   ),
                   const SizedBox(height: AppSpacing.md),

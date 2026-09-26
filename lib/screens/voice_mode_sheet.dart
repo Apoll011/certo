@@ -96,6 +96,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   bool _bootstrapped = false;
   bool _turnInFlight = false;
+  bool _shouldClose = false;
+  bool _openedVisual = false;
+  bool _collectingAskAnswer = false;
 
   late final AnimationController _orbCtrl;
   late final Animation<double> _orbScale;
@@ -183,6 +186,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   // fixed wall-clock silence timer. Partials only mean "still speaking".
   void _onEvent(VoiceEvent event) {
     if (!mounted) return;
+    // While ask_user is collecting a spoken reply, ignore for the main loop.
+    if (_collectingAskAnswer) return;
     switch (event) {
       case TranscriptionPartial(:final text):
         if (_phase != _VoicePhase.listening) return;
@@ -312,6 +317,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     final appState = Provider.of<AppState>(context, listen: false);
     var didSpeak = false;
+    _openedVisual = false;
+    _shouldClose = false;
 
     try {
       final assistant = appState.createAiAssistant(
@@ -324,12 +331,41 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           didSpeak = true;
           await _speakAloud(text);
         },
+        onAskUser: (question) async {
+          // Show + speak the question, then listen for the next utterance.
+          setState(() {
+            _bubbles.add(_ChatBubble(isUser: false, text: question));
+          });
+          _scrollChatToEnd();
+          await _speakAloud(question);
+          // Collect next spoken answer via a one-shot listen cycle.
+          final answer = await _collectSpokenAnswer();
+          if (answer.isNotEmpty) {
+            setState(() {
+              _bubbles.add(_ChatBubble(isUser: true, text: answer));
+            });
+            _scrollChatToEnd();
+          }
+          return answer;
+        },
         onStartVisualMode: (request) async {
           if (!mounted) return;
-          await showVisualVerificationScreen(
-            context,
-            expectedMedicationName: request.expectedMedicationName,
+          _openedVisual = true;
+          _shouldClose = true;
+          // Replace voice with visual so close/pop can't remove the camera.
+          await Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) => VisualVerificationScreen(request: request),
+              fullscreenDialog: true,
+            ),
           );
+        },
+        onCloseVoiceMode: () async {
+          _shouldClose = true;
+          // Only pop if we are still on the voice screen (not replaced by visual).
+          if (mounted && !_openedVisual) {
+            Navigator.of(context).pop();
+          }
         },
       );
 
@@ -375,11 +411,60 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     _turnInFlight = false;
 
+    // Don't resume listening if we closed or handed off to the camera.
+    if (!mounted || _shouldClose || _openedVisual) return;
+
     // After the AI finishes (and any speak audio ends), listen again so the
     // user can answer clarifying questions.
-    if (mounted) {
-      await _startListening();
+    await _startListening();
+  }
+
+  /// One-shot: listen until VAD end-of-turn, return transcript.
+  Future<String> _collectSpokenAnswer() async {
+    final done = Completer<String>();
+    var buffer = '';
+    Timer? grace;
+    _collectingAskAnswer = true;
+
+    void finish() {
+      if (done.isCompleted) return;
+      grace?.cancel();
+      _collectingAskAnswer = false;
+      done.complete(buffer.trim());
     }
+
+    late final StreamSubscription<VoiceEvent> sub;
+    sub = _svc.events.listen((event) {
+      if (event is TranscriptionPartial) {
+        grace?.cancel();
+      } else if (event is TranscriptionFinal) {
+        buffer = buffer.isEmpty
+            ? event.text.trim()
+            : '$buffer ${event.text.trim()}';
+        grace?.cancel();
+        grace = Timer(const Duration(milliseconds: 700), () {
+          sub.cancel();
+          _svc.stopListening();
+          finish();
+        });
+      } else if (event is VoiceError) {
+        sub.cancel();
+        finish();
+      }
+    });
+
+    await _svc.startListening();
+    if (mounted) setState(() => _phase = _VoicePhase.listening);
+
+    return done.future.timeout(
+      const Duration(seconds: 45),
+      onTimeout: () {
+        sub.cancel();
+        _svc.stopListening();
+        _collectingAskAnswer = false;
+        return buffer.trim();
+      },
+    );
   }
 
   Future<void> _speakAloud(String text) async {
