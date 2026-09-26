@@ -85,6 +85,7 @@ class _AlarmScreenState extends State<AlarmScreen>
     _clockTimer?.cancel();
     _pulse.dispose();
     _stopRinging();
+    AlarmSoundService.dismissAlarmNotification();
     WakelockPlus.disable();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();

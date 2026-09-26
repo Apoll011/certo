@@ -155,6 +155,8 @@ class AlarmService {
     } catch (e) {
       debugPrint('Verifi: notification permission request failed — $e');
     }
+    // Allow the first permission request to finish before requesting full-screen intent
+    await Future.delayed(const Duration(milliseconds: 300));
     try {
       await android?.requestFullScreenIntentPermission();
     } catch (e) {
@@ -243,12 +245,23 @@ class AlarmService {
     for (final m in meds) {
       if (m.status != MedicationStatus.active) continue;
       for (final at in upcomingOccurrences(m, now, days: 14)) {
+        final alarmId = id++;
+        final timeStr = clock12(at);
         await _zonedSchedule(
-          id: id++,
+          id: alarmId,
           title: m.name,
           body: m.dosageLine,
           scheduledDate: tz.TZDateTime.from(at, tz.local),
-          payload: jsonEncode({'medicationId': m.id, 'time': clock12(at)}),
+          payload: jsonEncode({'medicationId': m.id, 'time': timeStr}),
+        );
+        // Also schedule via native AlarmClock so Android wakes the screen directly.
+        await AlarmSoundService.scheduleNativeAlarm(
+          id: alarmId,
+          title: m.name,
+          body: m.dosageLine,
+          medicationId: m.id,
+          time: timeStr,
+          timestampMs: at.millisecondsSinceEpoch,
         );
       }
     }
@@ -258,12 +271,21 @@ class AlarmService {
   static Future<void> snooze(Medication m, String time, int minutes) async {
     await init();
     final at = DateTime.now().add(Duration(minutes: minutes));
+    final id = _snoozeId(m.id);
     await _zonedSchedule(
-      id: _snoozeId(m.id),
+      id: id,
       title: m.name,
       body: m.dosageLine,
       scheduledDate: tz.TZDateTime.from(at, tz.local),
       payload: jsonEncode({'medicationId': m.id, 'time': time}),
+    );
+    await AlarmSoundService.scheduleNativeAlarm(
+      id: id,
+      title: m.name,
+      body: m.dosageLine,
+      medicationId: m.id,
+      time: time,
+      timestampMs: at.millisecondsSinceEpoch,
     );
   }
 
@@ -304,7 +326,10 @@ class AlarmService {
   /// Cancels the one-off snooze reminder for a medication, if any.
   static Future<void> cancelSnooze(String medicationId) async {
     await init();
-    await _plugin.cancel(id: _snoozeId(medicationId));
+    final id = _snoozeId(medicationId);
+    await _plugin.cancel(id: id);
+    await AlarmSoundService.cancelNativeAlarm(id);
+    await AlarmSoundService.dismissAlarmNotification(id);
   }
 
   /// Recreates the notification channel so a newly chosen alarm sound takes
@@ -346,8 +371,9 @@ class AlarmService {
         _channelName,
         channelDescription: _channelDescription,
         importance: Importance.max,
-        priority: Priority.high,
+        priority: Priority.max,
         category: AndroidNotificationCategory.alarm,
+        visibility: NotificationVisibility.public,
         fullScreenIntent: true,
         playSound: true,
         sound: sound,
@@ -355,8 +381,9 @@ class AlarmService {
         enableVibration: true,
         vibrationPattern: Int64List.fromList([0, 600, 400, 600]),
         autoCancel: false,
+        ongoing: true,
       ),
-      iOS: DarwinNotificationDetails(
+      iOS: const DarwinNotificationDetails(
         presentAlert: true,
         presentSound: true,
         presentBadge: true,

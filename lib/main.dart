@@ -1,16 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'l10n/app_localizations.dart';
+import 'models/medication.dart';
 import 'screens/alarm_screen.dart';
 import 'screens/auth_screen.dart';
 import 'screens/main_shell.dart';
 import 'screens/onboarding_screen.dart';
 import 'services/alarm_service.dart';
+import 'services/alarm_sound_service.dart';
 import 'services/supabase_service.dart';
 import 'state/app_state.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
+import 'utils/format.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -53,6 +58,8 @@ class _Root extends StatefulWidget {
 class _RootState extends State<_Root> {
   late AppState _state;
   bool _showAuth = false;
+  bool _alarmScreenShowing = false;
+  Timer? _foregroundAlarmTimer;
 
   @override
   void initState() {
@@ -60,12 +67,45 @@ class _RootState extends State<_Root> {
     _state = context.read<AppState>();
     _state.addListener(_onAppStateChanged);
     AlarmService.onOpenAlarm = _openAlarm;
+    AlarmSoundService.setAlarmFiredHandler(_openAlarm);
+    _startForegroundAlarmCheck();
     WidgetsBinding.instance.addPostFrameCallback((_) => _afterFirstFrame());
   }
 
-  /// Bootstraps data, captures the cold-start launch details (now that the
-  /// activity is attached), and routes to the alarm screen if the OS launched
-  /// the app to deliver a full-screen alarm.
+  void _startForegroundAlarmCheck() {
+    _foregroundAlarmTimer?.cancel();
+    _foregroundAlarmTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted || _alarmScreenShowing) return;
+      _checkForegroundAlarms();
+    });
+  }
+
+  void _checkForegroundAlarms() {
+    if (_state.authStatus != AuthStatus.signedIn && SupabaseService.isConfigured) {
+      return;
+    }
+    final now = DateTime.now();
+    for (final med in _state.medications) {
+      if (med.status != MedicationStatus.active) continue;
+      if (_state.isTaken(med.id)) continue;
+      final snoozedUntil = _state.snoozedUntilFor(med.id);
+      if (snoozedUntil != null && snoozedUntil.isAfter(now)) continue;
+
+      for (final t in med.times) {
+        final parsed = timeToDateTime(t, now);
+        if (parsed != null &&
+            parsed.hour == now.hour &&
+            parsed.minute == now.minute &&
+            now.second <= 12) {
+          _openAlarm(med.id, t);
+          return;
+        }
+      }
+    }
+  }
+
+  /// Bootstraps data, captures cold-start launch details, and routes to the
+  /// alarm screen if the OS launched the app to deliver a full-screen alarm.
   Future<void> _afterFirstFrame() async {
     try {
       await _state.bootstrap();
@@ -73,6 +113,13 @@ class _RootState extends State<_Root> {
       debugPrint('Verifi: bootstrap failed — $e');
     }
     if (!mounted) return;
+
+    // Check if launched by native alarm intent
+    final pendingNative = await AlarmSoundService.getPendingAlarm();
+    if (pendingNative != null && mounted) {
+      _openAlarm(pendingNative.medicationId, pendingNative.time);
+      return;
+    }
 
     await AlarmService.captureLaunchDetails();
     if (!mounted) return;
@@ -94,17 +141,37 @@ class _RootState extends State<_Root> {
   }
 
   void _openAlarm(String medicationId, String? time) {
-    final med = _state.medicationById(medicationId);
-    if (med == null) return;
+    if (_alarmScreenShowing) return;
+
+    var med = _state.medicationById(medicationId);
+    // If medications haven't finished loading or id was not matched, build
+    // a fallback so the alarm screen ALWAYS pops up without fail.
+    med ??= Medication(
+      id: medicationId,
+      name: 'Medication',
+      dosage: '1 dose',
+      instruction: '',
+      category: '',
+      notes: '',
+      times: [time ?? '9:00 AM'],
+      pillColorIndex: 0,
+      startedAt: DateTime.now(),
+      status: MedicationStatus.active,
+    );
+
+    _alarmScreenShowing = true;
     AlarmService.navigatorKey.currentState?.push(
       MaterialPageRoute(
-        builder: (_) => AlarmScreen(medication: med, dueTime: time),
+        builder: (_) => AlarmScreen(medication: med!, dueTime: time),
       ),
-    );
+    ).then((_) {
+      _alarmScreenShowing = false;
+    });
   }
 
   @override
   void dispose() {
+    _foregroundAlarmTimer?.cancel();
     _state.removeListener(_onAppStateChanged);
     super.dispose();
   }
