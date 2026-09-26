@@ -16,6 +16,7 @@ import '../config/app_config.dart';
 import '../ai/ai.dart';
 import '../services/alarm_service.dart';
 import '../services/supabase_service.dart';
+import '../utils/adherence.dart';
 
 
 enum AuthStatus { loading, signedOut, signedIn }
@@ -162,7 +163,8 @@ class AppState extends ChangeNotifier {
     return medications.where((m) => m.status == status).toList();
   }
 
-  bool isTaken(String id) => takenIds.contains(id);
+  bool isTaken(String id) =>
+      takenIds.contains(id) && medicationById(id) != null;
 
   /// When the medication is snoozed until, or null if not currently snoozed.
   DateTime? snoozedUntilFor(String id) {
@@ -269,6 +271,7 @@ class AppState extends ChangeNotifier {
       medications
         ..clear()
         ..addAll(meds ?? const []);
+      _pruneTakenIds();
       await refreshDoseHistory();
       await refreshCaregiverData();
     } catch (e) {
@@ -291,16 +294,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Local calendar day key (yyyy-MM-dd) for "taken today" persistence.
-  static String _todayKey([DateTime? now]) {
-    final d = now ?? DateTime.now();
-    final y = d.year.toString().padLeft(4, '0');
-    final m = d.month.toString().padLeft(2, '0');
-    final day = d.day.toString().padLeft(2, '0');
-    return '$y-$m-$day';
-  }
-
-  static bool _isSameLocalDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
+  static String _todayKey([DateTime? now]) => adherenceDayKey(now ?? DateTime.now());
 
   /// Restore [takenIds] from SharedPreferences when the saved day is today.
   void _restoreTakenIdsFromPrefs() {
@@ -319,6 +313,7 @@ class AppState extends ChangeNotifier {
     takenIds
       ..clear()
       ..addAll(ids);
+    // Don't prune here — medications may still be mocks during bootstrap.
   }
 
   Future<void> _persistTakenIds() async {
@@ -335,17 +330,15 @@ class AppState extends ChangeNotifier {
   /// Rebuild today's taken set from [doseHistory] (newest action per med wins).
   void _rebuildTakenIdsFromHistory() {
     final now = DateTime.now();
-    final latestAction = <String, String>{};
-    for (final e in doseHistory) {
-      final at = e.at.toLocal();
-      if (!_isSameLocalDay(at, now)) continue;
-      // doseHistory is newest-first — first write wins as latest.
-      latestAction.putIfAbsent(e.medicationId, () => e.action);
-    }
-    takenIds.clear();
-    for (final entry in latestAction.entries) {
-      if (entry.value == 'taken') takenIds.add(entry.key);
-    }
+    final taken = takenMedIdsForDay(doseHistory, now);
+    takenIds
+      ..clear()
+      ..addAll(taken.where((id) => medicationById(id) != null));
+  }
+
+  /// Drop taken marks that don't belong to a known medication.
+  void _pruneTakenIds() {
+    takenIds.removeWhere((id) => medicationById(id) == null);
   }
 
   /// Rebuilds the OS alarm schedule from the current medication list.
@@ -661,6 +654,12 @@ class AppState extends ChangeNotifier {
     final uid = _user?.id;
     if (uid == null || !SupabaseService.isConfigured) return;
     try {
+      // Keep optimistic local rows (not yet on server) so a refresh can't wipe
+      // today's taken marks while the insert is in flight / offline.
+      final pendingLocal = doseHistory
+          .where((e) => e.id == null)
+          .toList(growable: false);
+
       final since = DateTime.now()
           .toUtc()
           .subtract(const Duration(days: 40))
@@ -688,19 +687,34 @@ class AppState extends ChangeNotifier {
           ),
         );
       }
+
+      // Re-attach pending locals that aren't already represented server-side.
+      for (final local in pendingLocal) {
+        final already = list.any(
+          (s) =>
+              s.medicationId == local.medicationId &&
+              s.action == local.action &&
+              (s.at.difference(local.at).inSeconds).abs() < 120,
+        );
+        if (!already) list.insert(0, local);
+      }
+
       doseHistory
         ..clear()
         ..addAll(list);
+
       if (list.isNotEmpty) {
         _rebuildTakenIdsFromHistory();
       } else {
         _restoreTakenIdsFromPrefs();
       }
+      _pruneTakenIds();
       await _persistTakenIds();
       notifyListeners();
     } catch (e) {
       debugPrint('Verifi: refresh dose history failed — $e');
       _restoreTakenIdsFromPrefs();
+      _pruneTakenIds();
     }
   }
 
@@ -708,11 +722,34 @@ class AppState extends ChangeNotifier {
     final uid = _user?.id;
     if (uid == null) return;
     try {
-      await SupabaseService.client.from('dose_events').insert({
-        'medication_id': medicationId,
-        'user_id': uid,
-        'action': action,
-      });
+      final row = await SupabaseService.client
+          .from('dose_events')
+          .insert({
+            'medication_id': medicationId,
+            'user_id': uid,
+            'action': action,
+          })
+          .select('id, created_at')
+          .maybeSingle();
+      // Stamp the matching optimistic local row so the next refresh won't
+      // duplicate it.
+      if (row != null) {
+        final id = row['id']?.toString();
+        final created = DateTime.tryParse(row['created_at']?.toString() ?? '');
+        for (var i = 0; i < doseHistory.length; i++) {
+          final e = doseHistory[i];
+          if (e.id != null) continue;
+          if (e.medicationId != medicationId || e.action != action) continue;
+          doseHistory[i] = DoseLogEntry(
+            id: id,
+            medicationId: e.medicationId,
+            medicationName: e.medicationName,
+            action: e.action,
+            at: created ?? e.at,
+          );
+          break;
+        }
+      }
     } catch (e) {
       debugPrint('Verifi: record dose failed — $e');
     }

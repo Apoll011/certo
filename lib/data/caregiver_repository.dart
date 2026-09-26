@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/caregiver.dart';
 import '../models/dose_log_entry.dart';
 import '../models/medication.dart';
+import '../utils/adherence.dart';
 
 /// Data-access for caregiver links + cross-user adherence reads.
 class CaregiverRepository {
@@ -271,19 +272,15 @@ class CaregiverRepository {
       days: heatmapDays,
     );
     final today = DateTime.now();
-    final todayKey = _dayKey(today);
+    final todayKey = adherenceDayKey(today);
     final todayCell = heatmap.cast<AdherenceDay?>().firstWhere(
-          (d) => d != null && _dayKey(d.date) == todayKey,
+          (d) => d != null && adherenceDayKey(d.date) == todayKey,
           orElse: () => null,
         ) ??
         AdherenceDay(date: today, tone: AdherenceDayTone.none);
 
-    final takenToday = <String>{};
-    for (final e in enriched) {
-      if (e.action != 'taken') continue;
-      if (_dayKey(e.at.toLocal()) != todayKey) continue;
-      takenToday.add(e.medicationId);
-    }
+    // Latest action wins — a later skip must clear "taken".
+    final takenToday = takenMedIdsForDay(enriched, today);
 
     return CareRecipientSnapshot(
       link: link.copyWith(patientName: link.patientName),
@@ -293,109 +290,4 @@ class CaregiverRepository {
       todayTone: todayCell.tone,
     );
   }
-}
-
-String _dayKey(DateTime d) {
-  final local = d.toLocal();
-  return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')}';
-}
-
-/// Calendar heatmap: one cell per day.
-///
-/// - green: every scheduled dose that day has a `taken` (or match logged as taken)
-/// - yellow: any `uncertain`
-/// - red: any `mismatch` / `skipped`, or scheduled doses with no taken by end of day
-/// - none: no schedule that day / future day
-List<AdherenceDay> buildAdherenceHeatmap({
-  required List<Medication> medications,
-  required List<DoseLogEntry> events,
-  int days = 28,
-  DateTime? now,
-}) {
-  final today = (now ?? DateTime.now()).toLocal();
-  final todayDate = DateTime(today.year, today.month, today.day);
-  final active = medications
-      .where((m) => m.status == MedicationStatus.active)
-      .toList();
-
-  // Index events by day → action counts / taken med ids.
-  final byDayTaken = <String, Set<String>>{};
-  final byDayUncertain = <String, int>{};
-  final byDayMismatch = <String, int>{};
-  final byDaySkipped = <String, int>{};
-
-  for (final e in events) {
-    final key = _dayKey(e.at);
-    switch (e.action) {
-      case 'taken':
-        (byDayTaken[key] ??= {}).add(e.medicationId);
-      case 'uncertain':
-        byDayUncertain[key] = (byDayUncertain[key] ?? 0) + 1;
-      case 'mismatch':
-        byDayMismatch[key] = (byDayMismatch[key] ?? 0) + 1;
-      case 'skipped':
-        byDaySkipped[key] = (byDaySkipped[key] ?? 0) + 1;
-    }
-  }
-
-  final out = <AdherenceDay>[];
-  for (var i = days - 1; i >= 0; i--) {
-    final day = todayDate.subtract(Duration(days: i));
-    final key = _dayKey(day);
-    final scheduled = _scheduledMedIdsForDay(active, day);
-    final taken = byDayTaken[key] ?? {};
-    final uncertain = byDayUncertain[key] ?? 0;
-    final mismatch = byDayMismatch[key] ?? 0;
-    final skipped = byDaySkipped[key] ?? 0;
-    final missed = scheduled.where((id) => !taken.contains(id)).length;
-    final isFuture = day.isAfter(todayDate);
-    final isToday = day == todayDate;
-
-    AdherenceDayTone tone;
-    if (isFuture || scheduled.isEmpty) {
-      tone = AdherenceDayTone.none;
-    } else if (mismatch > 0 || skipped > 0 || (missed > 0 && !isToday)) {
-      // Past day with missing taken → alert. Today still in progress → only
-      // flag if mismatch/skip/uncertain, else good/partial.
-      tone = AdherenceDayTone.alert;
-    } else if (uncertain > 0) {
-      tone = AdherenceDayTone.uncertain;
-    } else if (missed > 0 && isToday) {
-      // Still time left today — show uncertain (in progress) rather than red.
-      tone = taken.isEmpty ? AdherenceDayTone.none : AdherenceDayTone.uncertain;
-    } else if (taken.length >= scheduled.length && scheduled.isNotEmpty) {
-      tone = AdherenceDayTone.good;
-    } else {
-      tone = AdherenceDayTone.none;
-    }
-
-    out.add(
-      AdherenceDay(
-        date: day,
-        tone: tone,
-        takenCount: taken.length,
-        scheduledCount: scheduled.length,
-        uncertainCount: uncertain,
-        mismatchCount: mismatch,
-        missedCount: isToday ? 0 : missed,
-      ),
-    );
-  }
-  return out;
-}
-
-Set<String> _scheduledMedIdsForDay(List<Medication> meds, DateTime day) {
-  final ids = <String>{};
-  for (final m in meds) {
-    // Respect frequency_days roughly: day offset from startedAt.
-    final start = DateTime(m.startedAt.year, m.startedAt.month, m.startedAt.day);
-    if (day.isBefore(start)) continue;
-    final freq = m.frequencyDays <= 0 ? 1 : m.frequencyDays;
-    final diff = day.difference(start).inDays;
-    if (diff % freq != 0) continue;
-    if (m.times.isEmpty) continue;
-    // If times are present, count as scheduled that day.
-    ids.add(m.id);
-  }
-  return ids;
 }

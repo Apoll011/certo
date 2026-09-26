@@ -485,18 +485,16 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen>
       _canConfirm = data.canConfirm;
     });
 
-    // Persist verification outcomes for caregiver heatmaps.
+    // Persist final mismatch only — do not log intermediate "uncertain" scans;
+    // those were polluting caregiver heatmaps and taken sync.
     final appState = Provider.of<AppState>(context, listen: false);
     final med = findMedication(
       appState,
       name: _identifiedName.isNotEmpty ? _identifiedName : _expectedName,
     );
-    if (med != null) {
-      if (data.status == VisualVerificationStatus.confirmedMismatch) {
-        appState.logVerification(med.id, 'mismatch');
-      } else if (data.status == VisualVerificationStatus.uncertain) {
-        appState.logVerification(med.id, 'uncertain');
-      }
+    if (med != null &&
+        data.status == VisualVerificationStatus.confirmedMismatch) {
+      appState.logVerification(med.id, 'mismatch');
     }
   }
 

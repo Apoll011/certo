@@ -130,12 +130,29 @@ MedicationStatus _statusFromDb(dynamic value) {
 
 /// Supabase returns `date` as a string like "2026-04-09"; be lenient.
 DateTime _dateFromDb(dynamic value) {
-  if (value is DateTime) return value;
-  if (value is String) {
-    final parsed = DateTime.tryParse(value);
-    if (parsed != null) return parsed;
+  if (value is DateTime) {
+    // Normalize to local calendar date (avoid UTC midnight shifting the day).
+    final local = value.toLocal();
+    return DateTime(local.year, local.month, local.day);
   }
-  return DateTime.now();
+  if (value is String) {
+    final dateOnly = RegExp(r'^(\d{4})-(\d{2})-(\d{2})');
+    final m = dateOnly.firstMatch(value.trim());
+    if (m != null) {
+      return DateTime(
+        int.parse(m.group(1)!),
+        int.parse(m.group(2)!),
+        int.parse(m.group(3)!),
+      );
+    }
+    final parsed = DateTime.tryParse(value);
+    if (parsed != null) {
+      final local = parsed.toLocal();
+      return DateTime(local.year, local.month, local.day);
+    }
+  }
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day);
 }
 
 /// "YYYY-MM-DD" for a Postgres `date` column.

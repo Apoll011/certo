@@ -98,7 +98,7 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
                   ),
                 ] else ...[
                   Text(
-                    'Green = all confirmed · Yellow = uncertain · Red = missed or mismatch',
+                    'Green = all taken · Yellow = some taken · Red = missed or problem',
                     style: textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
@@ -431,9 +431,9 @@ class _RecipientCard extends StatelessWidget {
   }
 
   String _toneLabel(AdherenceDayTone tone) => switch (tone) {
-        AdherenceDayTone.good => 'all confirmed',
-        AdherenceDayTone.uncertain => 'needs a look',
-        AdherenceDayTone.alert => 'missed / mismatch',
+        AdherenceDayTone.good => 'all taken',
+        AdherenceDayTone.uncertain => 'some taken',
+        AdherenceDayTone.alert => 'missed / problem',
         AdherenceDayTone.none => 'no data yet',
       };
 }
@@ -516,7 +516,7 @@ class _CareRecipientDetailScreenState extends State<CareRecipientDetailScreen> {
                                 ),
                                 const SizedBox(height: 4),
                                 const Text(
-                                  'Last 4 weeks of verification. Green = all doses confirmed, yellow = uncertain, red = missed or mismatch.',
+                                  'Green = all taken · Yellow = some taken · Red = missed or problem. Based on the latest action per medication each day.',
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Color(0xFF64748B),
@@ -586,9 +586,24 @@ class _CareRecipientDetailScreenState extends State<CareRecipientDetailScreen> {
                                       ),
                                     ),
                                     if (snap.takenTodayIds.contains(med.id))
-                                      const Icon(
-                                        Icons.check_circle_rounded,
-                                        color: Color(0xFF15803D),
+                                      const Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Icon(
+                                            Icons.check_circle_rounded,
+                                            color: Color(0xFF15803D),
+                                          ),
+                                          SizedBox(height: 2),
+                                          Text(
+                                            'Taken',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              color: Color(0xFF15803D),
+                                            ),
+                                          ),
+                                        ],
                                       )
                                     else
                                       TextButton(

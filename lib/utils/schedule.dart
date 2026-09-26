@@ -60,8 +60,9 @@ bool isScheduledOn(Medication m, DateTime day) {
   final start = dateOnly(m.startedAt);
   final d = dateOnly(day);
   if (d.isBefore(start)) return false;
+  final freq = m.frequencyDays <= 0 ? 1 : m.frequencyDays;
   final days = d.difference(start).inDays;
-  return days % m.frequencyDays == 0;
+  return days % freq == 0;
 }
 
 /// The next dose occurrences of [m] strictly after [from], up to [days] ahead.
