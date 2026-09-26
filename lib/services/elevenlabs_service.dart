@@ -40,9 +40,27 @@ class VoiceError extends VoiceEvent {
   final String message;
 }
 
-/// Manages ElevenLabs STT (Scribe v2 Realtime) and TTS (eleven_v3) sessions.
+/// Manages ElevenLabs STT (Scribe v2 Realtime) and TTS sessions.
+///
+/// Mic transcription uses the server-side **VAD commit strategy**: the model
+/// detects when the user stops speaking (not a fixed wall-clock timer), which
+/// holds up much better in noisy rooms. Background audio filtering is enabled.
 class ElevenLabsService {
-  ElevenLabsService();
+  ElevenLabsService({
+    this.vadSilenceThresholdSecs = 1.2,
+    this.vadThreshold = 0.5,
+    this.minSpeechDurationMs = 120,
+    this.minSilenceDurationMs = 120,
+  });
+
+  /// How long the user must be silent (speech stopped) before VAD commits.
+  final double vadSilenceThresholdSecs;
+
+  /// Voice-activity sensitivity (0–1). Higher = less likely to treat noise as speech.
+  final double vadThreshold;
+
+  final int minSpeechDurationMs;
+  final int minSilenceDurationMs;
 
   // Official ElevenLabs Scribe v2 Realtime WebSocket endpoint
   static const String _sttHost = 'api.elevenlabs.io';
@@ -89,8 +107,8 @@ class ElevenLabsService {
       return;
     }
 
-    // Scribe v2 Realtime WebSocket URI:
-    // wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&audio_format=pcm_16000
+    // VAD commit strategy: server detects end-of-speech and emits
+    // committed_transcript. filter_background_audio helps in loud rooms.
     final uri = Uri(
       scheme: 'wss',
       host: _sttHost,
@@ -98,6 +116,12 @@ class ElevenLabsService {
       queryParameters: {
         'model_id': AppConfig.elevenLabsSttModel,
         'audio_format': 'pcm_16000',
+        'commit_strategy': 'vad',
+        'vad_silence_threshold_secs': vadSilenceThresholdSecs.toString(),
+        'vad_threshold': vadThreshold.toString(),
+        'min_speech_duration_ms': minSpeechDurationMs.toString(),
+        'min_silence_duration_ms': minSilenceDurationMs.toString(),
+        'filter_background_audio': 'true',
       },
     );
 
@@ -148,13 +172,14 @@ class ElevenLabsService {
 
       _audioSub = audioStream.listen((chunk) {
         if (_wsChannel == null) return;
-        // ElevenLabs Scribe v2 Realtime expects:
-        // {"message_type": "input_audio_chunk", "audio_base_64": "..."}
+        // Scribe realtime requires commit + sample_rate on every chunk.
         try {
           _wsChannel!.sink.add(
             jsonEncode({
               'message_type': 'input_audio_chunk',
               'audio_base_64': base64Encode(chunk),
+              'commit': false,
+              'sample_rate': 16000,
             }),
           );
         } catch (e) {
@@ -163,7 +188,7 @@ class ElevenLabsService {
       });
 
       _listening = true;
-      debugPrint('ElevenLabs STT: microphone streaming started');
+      debugPrint('ElevenLabs STT: microphone streaming started (VAD commit)');
     } catch (e) {
       debugPrint('ElevenLabs STT: failed to start mic recorder: $e');
       _emit(VoiceError('Microphone recording failed: $e'));
@@ -180,7 +205,10 @@ class ElevenLabsService {
 
       switch (msgType) {
         case 'session_started':
-          debugPrint('ElevenLabs STT: session started: ${msg['session_id']}');
+          debugPrint(
+            'ElevenLabs STT: session started: ${msg['session_id']} '
+            'config=${msg['config']}',
+          );
 
         case 'partial_transcript':
           final text = (msg['text'] as String?) ?? '';
@@ -189,6 +217,8 @@ class ElevenLabsService {
           }
 
         case 'committed_transcript':
+        case 'committed_transcript_with_timestamps':
+          // VAD (or manual commit) finalized this utterance segment.
           final text = (msg['text'] as String?) ?? '';
           if (text.isNotEmpty) {
             _emit(TranscriptionFinal(text));
@@ -225,13 +255,16 @@ class ElevenLabsService {
       await _recorder.stop();
     } catch (_) {}
 
-    // Ask server to commit any remaining audio
+    // Flush any remaining buffered speech as a final commit.
     try {
-      _wsChannel?.sink.add(jsonEncode({
-        'message_type': 'input_audio_chunk',
-        'audio_base_64': '',
-        'commit': true,
-      }));
+      _wsChannel?.sink.add(
+        jsonEncode({
+          'message_type': 'input_audio_chunk',
+          'audio_base_64': '',
+          'commit': true,
+          'sample_rate': 16000,
+        }),
+      );
     } catch (_) {}
 
     // Give server a brief window to commit

@@ -68,7 +68,9 @@ class VoiceModeScreen extends StatefulWidget {
 
 class _VoiceModeScreenState extends State<VoiceModeScreen>
     with TickerProviderStateMixin {
-  static const _silenceDuration = Duration(seconds: 2);
+  /// After VAD commits a segment, wait this long for the user to continue
+  /// speaking (breath / pause mid-thought) before calling the AI.
+  static const _endOfTurnGrace = Duration(milliseconds: 700);
 
   late final ElevenLabsService _svc;
   StreamSubscription<VoiceEvent>? _eventSub;
@@ -81,7 +83,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   String _finalText = '';
   String? _errorText;
   final List<int> _audioBuffer = [];
-  Timer? _silenceTimer;
+  Timer? _endOfTurnTimer;
   Completer<void>? _speakDone;
 
   /// Conversation history sent to the AI (no system messages).
@@ -160,7 +162,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   @override
   void dispose() {
-    _silenceTimer?.cancel();
+    _endOfTurnTimer?.cancel();
     _orbCtrl.dispose();
     _morphCtrl.dispose();
     _chatScroll.dispose();
@@ -175,27 +177,23 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   }
 
   // ── STT events ───────────────────────────────────────────────────────────
+  // End-of-turn is driven by ElevenLabs VAD (committed_transcript), not a
+  // fixed wall-clock silence timer. Partials only mean "still speaking".
   void _onEvent(VoiceEvent event) {
     if (!mounted) return;
     switch (event) {
       case TranscriptionPartial(:final text):
         if (_phase != _VoicePhase.listening) return;
-        _silenceTimer?.cancel();
+        // User is mid-utterance — cancel any pending end-of-turn.
+        _endOfTurnTimer?.cancel();
         setState(() {
           _partialText = text;
           _errorText = null;
         });
-        if (text.trim().isNotEmpty) {
-          _silenceTimer = Timer(_silenceDuration, () {
-            if (mounted && _phase == _VoicePhase.listening) {
-              _finishListeningAndCallAi();
-            }
-          });
-        }
 
       case TranscriptionFinal(:final text):
+        // VAD detected the user stopped speaking for this segment.
         if (_phase != _VoicePhase.listening) return;
-        _silenceTimer?.cancel();
         if (text.trim().isEmpty) return;
         setState(() {
           _finalText =
@@ -203,7 +201,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
           _partialText = '';
           _errorText = null;
         });
-        _silenceTimer = Timer(_silenceDuration, () {
+        // Brief grace so a short breath mid-sentence can continue.
+        _endOfTurnTimer?.cancel();
+        _endOfTurnTimer = Timer(_endOfTurnGrace, () {
           if (mounted && _phase == _VoicePhase.listening) {
             _finishListeningAndCallAi();
           }
@@ -242,7 +242,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     try {
       await _player.stop();
     } catch (_) {}
-    _silenceTimer?.cancel();
+    _endOfTurnTimer?.cancel();
     _audioBuffer.clear();
 
     if (!mounted) return;
@@ -257,7 +257,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   Future<void> _finishListeningAndCallAi() async {
     if (_phase != _VoicePhase.listening || _turnInFlight) return;
-    _silenceTimer?.cancel();
+    _endOfTurnTimer?.cancel();
 
     final spoken = _finalText.trim().isNotEmpty
         ? _finalText.trim()
