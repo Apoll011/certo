@@ -25,6 +25,7 @@ const String _kNamePref = 'user_name';
 const String _kAlarmSoundPref = 'alarm_sound_uri';
 const String _kTakenIdsPref = 'taken_ids_today';
 const String _kTakenDatePref = 'taken_ids_date';
+const String _kShowCaregiverTabPref = 'show_caregiver_tab';
 
 /// Holds the app's working state: auth session, medications, taken set, tab.
 ///
@@ -56,6 +57,9 @@ class AppState extends ChangeNotifier {
   /// Whether this account is a caregiver (family or professional).
   bool isCaregiver = false;
   String role = 'individual';
+
+  /// When false, the Caregiver tab is hidden and Settings replaces it in the nav.
+  bool showCaregiverTab = true;
 
   /// Active people I care for (when [isCaregiver]).
   final List<CaregiverLink> careRecipients = [];
@@ -197,6 +201,7 @@ class AppState extends ChangeNotifier {
 
     // Restore today's "taken" marks before UI paints.
     _restoreTakenIdsFromPrefs();
+    showCaregiverTab = _prefs?.getBool(_kShowCaregiverTabPref) ?? true;
 
     if (!SupabaseService.isConfigured) {
       authStatus = AuthStatus.signedOut;
@@ -743,6 +748,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Show or hide the Caregiver tab in the bottom nav (Settings replaces it).
+  Future<void> setShowCaregiverTab(bool show) async {
+    showCaregiverTab = show;
+    await _prefs?.setBool(_kShowCaregiverTabPref, show);
+    // If we hide caregiver while sitting on that tab, stay on the 4th slot
+    // (now Settings). If we re-show caregiver while on Settings tab slot, fine.
+    if (selectedTabIndex > 3) selectedTabIndex = 3;
+    notifyListeners();
+  }
+
   Future<void> refreshCaregiverData() async {
     final repo = _caregiverRepo;
     if (!isAuthenticated || repo == null) return;
@@ -752,18 +767,22 @@ class AppState extends ChangeNotifier {
         ..clear()
         ..addAll(granted);
 
-      if (isCaregiver) {
-        final recipients = await repo.fetchMyCareRecipients();
-        careRecipients
-          ..clear()
-          ..addAll(recipients);
-        for (final link in List<CaregiverLink>.of(careRecipients)) {
-          try {
-            final snap = await repo.loadRecipientSnapshot(link);
-            careSnapshots[link.id] = snap;
-          } catch (e) {
-            debugPrint('Verifi: recipient snapshot failed — $e');
-          }
+      // Always load recipients you already linked (even before flipping the flag).
+      final recipients = await repo.fetchMyCareRecipients();
+      careRecipients
+        ..clear()
+        ..addAll(recipients);
+      if (recipients.isNotEmpty && !isCaregiver) {
+        isCaregiver = true;
+        role = 'family_caregiver';
+        await _prefs?.setBool('is_caregiver_local', true);
+      }
+      for (final link in List<CaregiverLink>.of(careRecipients)) {
+        try {
+          final snap = await repo.loadRecipientSnapshot(link);
+          careSnapshots[link.id] = snap;
+        } catch (e) {
+          debugPrint('Verifi: recipient snapshot failed — $e');
         }
       }
       notifyListeners();

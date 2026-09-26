@@ -51,74 +51,166 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final canPop = Navigator.of(context).canPop();
+    final isCaregiverView = state.careRecipients.isNotEmpty;
 
-    return SafeArea(
-      bottom: false,
-      child: RefreshIndicator(
-        onRefresh: () => _refresh(state),
-        child: ListView(
-          padding: AppSpacing.pagePadding,
-          children: [
-            ScreenHeader(
-              title: 'Caregiver',
-              large: true,
-              trailing: IconButton(
-                tooltip: 'Sharing & invites',
-                onPressed: () => _openSharingSheet(context, state),
-                icon: Icon(Icons.shield_outlined, color: scheme.onSurface),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            if (!state.isAuthenticated)
-              _signedOutCard(context)
-            else if (!state.isCaregiver)
-              _enableCaregiverCard(context, state)
-            else ...[
-              Text(
-                'People you support',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: RefreshIndicator(
+          onRefresh: () => _refresh(state),
+          child: ListView(
+            padding: AppSpacing.pagePadding,
+            children: [
+              canPop
+                  ? ScreenHeader.back(
+                      title: isCaregiverView ? 'Caregiver' : 'Sharing',
+                      onBack: () => Navigator.of(context).pop(),
+                    )
+                  : ScreenHeader(
+                      title: isCaregiverView ? 'Caregiver' : 'Sharing',
+                      large: true,
                     ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'One glance per person — green means every scheduled dose was confirmed, yellow means uncertain, red means missed or mismatched.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              const SizedBox(height: AppSpacing.sm),
+              if (!state.isAuthenticated)
+                _signedOutCard(context)
+              else ...[
+                if (!isCaregiverView) ...[
+                  Text(
+                    'Create a code for someone to help you, or redeem a code to support someone else.',
+                    style: textTheme.bodyMedium?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              if (_refreshing && state.careRecipients.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 32),
-                  child: Center(child: CircularProgressIndicator()),
-                )
-              else if (state.careRecipients.isEmpty)
-                EmptyState(
-                  icon: Icons.person_add_alt_1_rounded,
-                  title: 'Add someone you care for',
-                  subtitle:
-                      'Ask them to share an invite code from Settings → Sharing. You\'ll see their adherence calendar here — with their explicit, revocable consent.',
-                  iconColor: scheme.secondary,
-                  iconBackground: scheme.secondaryContainer,
-                )
-              else
-                for (final link in state.careRecipients) ...[
-                  _RecipientCard(
-                    link: link,
-                    snapshot: state.careSnapshots[link.id],
-                    onOpen: () => _openDetail(context, state, link),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                  PrimaryButton(
+                    label: 'Create invite code',
+                    icon: Icons.mail_outline_rounded,
+                    onPressed: () => _createInvite(context, state),
                   ),
                   const SizedBox(height: AppSpacing.md),
+                  PrimaryButton(
+                    label: 'Redeem invite code',
+                    icon: Icons.person_add_alt_1_rounded,
+                    filled: false,
+                    onPressed: () => _redeemInvite(context, state),
+                  ),
+                ] else ...[
+                  Text(
+                    'Green = all confirmed · Yellow = uncertain · Red = missed or mismatch',
+                    style: textTheme.bodySmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  if (_refreshing)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  for (final link in state.careRecipients) ...[
+                    _RecipientCard(
+                      link: link,
+                      snapshot: state.careSnapshots[link.id],
+                      onOpen: () => _openDetail(context, state, link),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                  ],
+                  const SizedBox(height: AppSpacing.xl),
+                  PrimaryButton(
+                    label: 'Create invite code',
+                    icon: Icons.mail_outline_rounded,
+                    filled: false,
+                    onPressed: () => _createInvite(context, state),
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  PrimaryButton(
+                    label: 'Redeem invite code',
+                    icon: Icons.person_add_alt_1_rounded,
+                    filled: false,
+                    onPressed: () => _redeemInvite(context, state),
+                  ),
                 ],
-              const SizedBox(height: AppSpacing.lg),
-              PrimaryButton(
-                label: 'Add with invite code',
-                icon: Icons.qr_code_rounded,
-                onPressed: () => _redeemInvite(context, state),
-              ),
+                if (state.grantedCareLinks
+                    .where((l) => l.status != CaregiverLinkStatus.revoked)
+                    .isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xxl),
+                  Text(
+                    'People with access to you',
+                    style: textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  for (final link in state.grantedCareLinks.where(
+                    (l) => l.status != CaregiverLinkStatus.revoked,
+                  ))
+                    _grantedLinkTile(context, state, link),
+                ],
+              ],
+              const SizedBox(height: AppSpacing.xxl),
             ],
-            const SizedBox(height: AppSpacing.xxl),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _grantedLinkTile(
+    BuildContext context,
+    AppState state,
+    CaregiverLink link,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: AppCard(
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    link.status == CaregiverLinkStatus.pending
+                        ? 'Code ${link.inviteCode}'
+                        : (link.caregiverName.isNotEmpty
+                            ? link.caregiverName
+                            : 'Caregiver connected'),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  Text(
+                    link.status == CaregiverLinkStatus.active
+                        ? 'Can view your adherence'
+                        : 'Waiting for them to redeem',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (link.status == CaregiverLinkStatus.pending)
+              IconButton(
+                tooltip: 'Copy code',
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: link.inviteCode));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Code copied'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.copy_rounded),
+              ),
+            TextButton(
+              onPressed: () async {
+                await state.revokeCaregiverAccess(link.id);
+              },
+              child: const Text('Revoke'),
+            ),
           ],
         ),
       ),
@@ -128,66 +220,59 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
   Widget _signedOutCard(BuildContext context) {
     return EmptyState(
       icon: Icons.lock_outline_rounded,
-      title: 'Sign in for caregiver mode',
+      title: 'Sign in to share',
       subtitle:
-          'Caregiver mode needs an account so consent and adherence stay private and revocable.',
+          'Create or redeem invite codes after you sign in — consent stays private and revocable.',
     );
   }
 
-  Widget _enableCaregiverCard(BuildContext context, AppState state) {
-    final scheme = Theme.of(context).colorScheme;
-    return AppCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+  Future<void> _createInvite(BuildContext context, AppState state) async {
+    try {
+      final link = await state.createCaregiverInvite();
+      if (!context.mounted || link == null) return;
+      await Clipboard.setData(ClipboardData(text: link.inviteCode));
+      if (!context.mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Invite code ready'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: scheme.secondaryContainer,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(Icons.favorite_outline_rounded,
-                    color: scheme.secondary),
+              const Text(
+                'Share this code with your caregiver. Copied to clipboard.',
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Turn on caregiver mode',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
+              const SizedBox(height: 12),
+              SelectableText(
+                link.inviteCode,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.4,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            'For family or professional aides. With the other person\'s consent you can see a color-coded calendar of their verification history — without taking over their independence.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Done'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$e'),
+            backgroundColor: const Color(0xFFB91C1C),
+            behavior: SnackBarBehavior.floating,
           ),
-          const SizedBox(height: 16),
-          PrimaryButton(
-            label: 'I\'m a caregiver',
-            onPressed: () async {
-              await state.setCaregiverMode(true);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Caregiver mode enabled'),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-            },
-          ),
-        ],
-      ),
-    );
+        );
+      }
+    }
   }
 
   Future<void> _redeemInvite(BuildContext context, AppState state) async {
@@ -255,15 +340,6 @@ class _CaregiverScreenState extends State<CaregiverScreen> {
         );
       }
     }
-  }
-
-  Future<void> _openSharingSheet(BuildContext context, AppState state) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) => _SharingSheet(state: state),
-    );
   }
 
   Future<void> _openDetail(
@@ -360,144 +436,6 @@ class _RecipientCard extends StatelessWidget {
         AdherenceDayTone.alert => 'missed / mismatch',
         AdherenceDayTone.none => 'no data yet',
       };
-}
-
-class _SharingSheet extends StatefulWidget {
-  const _SharingSheet({required this.state});
-  final AppState state;
-
-  @override
-  State<_SharingSheet> createState() => _SharingSheetState();
-}
-
-class _SharingSheetState extends State<_SharingSheet> {
-  String? _inviteCode;
-  bool _busy = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final state = widget.state;
-    final bottom = MediaQuery.paddingOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + bottom),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Sharing & consent',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'You stay in control. Generate a code for someone you trust. You can revoke access anytime — visibility is always explicit and revocable.',
-              style: TextStyle(color: Color(0xFF64748B), height: 1.35),
-            ),
-            const SizedBox(height: 16),
-            if (!state.isAuthenticated)
-              const Text('Sign in to manage sharing.')
-            else ...[
-              PrimaryButton(
-                label: _busy ? 'Creating…' : 'Generate invite code',
-                onPressed: _busy
-                    ? null
-                    : () async {
-                        setState(() => _busy = true);
-                        try {
-                          final link = await state.createCaregiverInvite();
-                          setState(() => _inviteCode = link?.inviteCode);
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('$e')),
-                            );
-                          }
-                        } finally {
-                          if (mounted) setState(() => _busy = false);
-                        }
-                      },
-              ),
-              if (_inviteCode != null) ...[
-                const SizedBox(height: 12),
-                AppCard(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _inviteCode!,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Copy',
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: _inviteCode!));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Code copied'),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.copy_rounded),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-              const SizedBox(height: 20),
-              Text(
-                'Who can see my adherence',
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-              ),
-              const SizedBox(height: 8),
-              if (state.grantedCareLinks
-                  .where((l) => l.status != CaregiverLinkStatus.revoked)
-                  .isEmpty)
-                const Text(
-                  'No one yet. Share a code when you\'re ready.',
-                  style: TextStyle(color: Color(0xFF64748B)),
-                )
-              else
-                for (final link in state.grantedCareLinks.where(
-                  (l) => l.status != CaregiverLinkStatus.revoked,
-                ))
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      link.status == CaregiverLinkStatus.pending
-                          ? 'Pending · ${link.inviteCode}'
-                          : (link.caregiverName.isNotEmpty
-                              ? link.caregiverName
-                              : 'Caregiver'),
-                    ),
-                    subtitle: Text(
-                      link.status == CaregiverLinkStatus.active
-                          ? 'Active access'
-                          : 'Waiting for caregiver to redeem',
-                    ),
-                    trailing: TextButton(
-                      onPressed: () async {
-                        await state.revokeCaregiverAccess(link.id);
-                        if (context.mounted) setState(() {});
-                      },
-                      child: const Text('Revoke'),
-                    ),
-                  ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Detail view for one care recipient — heatmap + meds + mark taken.

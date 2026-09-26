@@ -8,27 +8,31 @@ import 'caregiver_screen.dart';
 import 'home_screen.dart';
 import 'medications_screen.dart';
 import 'schedule_screen.dart';
+import 'settings_screen.dart';
 import 'voice_mode_sheet.dart';
 
 /// Hosts the four tabs and the voice entry point.
 ///
 /// Bottom navigation stays on all sizes; wider layouts only constrain content
 /// width so the phone UI isn't stretched edge-to-edge.
+///
+/// Tab 3 is Caregiver by default, or Settings when the caregiver tab is hidden.
 class MainShell extends StatelessWidget {
   const MainShell({super.key});
-
-  static const _tabs = <Widget>[
-    HomeScreen(),
-    MedicationsScreen(),
-    ScheduleScreen(),
-    CaregiverScreen(),
-  ];
 
   @override
   Widget build(BuildContext context) {
     return Consumer<AppState>(
       builder: (context, state, _) {
         final wide = MediaQuery.sizeOf(context).width >= AppBreakpoints.medium;
+        final tabs = <Widget>[
+          const HomeScreen(),
+          const MedicationsScreen(),
+          const ScheduleScreen(),
+          state.showCaregiverTab
+              ? const CaregiverScreen()
+              : const SettingsScreen(),
+        ];
 
         return Scaffold(
           body: Column(
@@ -37,19 +41,20 @@ class MainShell extends StatelessWidget {
                 child: wide
                     ? AdaptiveContent(
                         child: IndexedStack(
-                          index: state.selectedTabIndex,
-                          children: _tabs,
+                          index: state.selectedTabIndex.clamp(0, 3),
+                          children: tabs,
                         ),
                       )
                     : IndexedStack(
-                        index: state.selectedTabIndex,
-                        children: _tabs,
+                        index: state.selectedTabIndex.clamp(0, 3),
+                        children: tabs,
                       ),
               ),
               VerifiBottomNavBar(
-                selectedIndex: state.selectedTabIndex,
+                selectedIndex: state.selectedTabIndex.clamp(0, 3),
                 onTabChanged: state.setTab,
                 onMicTap: () => showVoiceMode(context),
+                showCaregiverTab: state.showCaregiverTab,
               ),
             ],
           ),

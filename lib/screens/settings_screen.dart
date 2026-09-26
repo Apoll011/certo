@@ -10,6 +10,7 @@ import '../theme/app_spacing.dart';
 import '../widgets/app_card.dart';
 import '../widgets/circle_icon_button.dart';
 import '../widgets/screen_header.dart';
+import 'caregiver_screen.dart';
 
 /// Settings: language, profile, alarms, account.
 class SettingsScreen extends StatelessWidget {
@@ -34,10 +35,12 @@ class SettingsScreen extends StatelessWidget {
                 AppSpacing.pageX,
                 AppSpacing.sm,
               ),
-              child: ScreenHeader.back(
-                title: l10n.settings,
-                onBack: () => Navigator.of(context).pop(),
-              ),
+              child: Navigator.of(context).canPop()
+                  ? ScreenHeader.back(
+                      title: l10n.settings,
+                      onBack: () => Navigator.of(context).pop(),
+                    )
+                  : ScreenHeader(title: l10n.settings, large: true),
             ),
             Expanded(
               child: ListView(
@@ -146,25 +149,34 @@ class SettingsScreen extends StatelessWidget {
                         vertical: 4,
                       ),
                       title: Text(
-                        'Caregiver mode',
+                        'Show Caregiver tab',
                         style: textTheme.titleMedium,
                       ),
                       subtitle: Text(
-                        state.isCaregiver
-                            ? 'On — you can support people who share an invite with you'
-                            : 'Off — enable to add people you care for',
+                        state.showCaregiverTab
+                            ? 'On — Sharing tab in the bottom bar'
+                            : 'Off — Settings replaces it in the bottom bar',
                         style: textTheme.bodySmall,
                       ),
-                      value: state.isCaregiver,
-                      onChanged: (v) => state.setCaregiverMode(v),
+                      value: state.showCaregiverTab,
+                      onChanged: (v) => state.setShowCaregiverTab(v),
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   AppCard(
                     onTap: () {
-                      // Jump to Caregiver tab sharing sheet via tab index 3.
-                      state.setTab(3);
-                      Navigator.of(context).pop();
+                      if (state.showCaregiverTab) {
+                        state.setTab(3);
+                        if (Navigator.of(context).canPop()) {
+                          Navigator.of(context).pop();
+                        }
+                      } else {
+                        Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => const CaregiverScreen(),
+                          ),
+                        );
+                      }
                     },
                     child: Row(
                       children: [
@@ -172,7 +184,7 @@ class SettingsScreen extends StatelessWidget {
                         const SizedBox(width: 14),
                         Expanded(
                           child: Text(
-                            'Sharing & consent',
+                            'Invite & sharing',
                             style: textTheme.titleMedium,
                           ),
                         ),

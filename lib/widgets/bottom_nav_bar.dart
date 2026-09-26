@@ -4,7 +4,7 @@ import '../l10n/app_localizations.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 
-/// Bottom tab bar: Home · Meds · [floating mic] · Schedule · Caregiver.
+/// Bottom tab bar: Home · Meds · [floating mic] · Schedule · Caregiver|Settings.
 ///
 /// The mic sits above the bar and overlaps it, larger on tablets.
 class VerifiBottomNavBar extends StatelessWidget {
@@ -13,12 +13,16 @@ class VerifiBottomNavBar extends StatelessWidget {
     required this.selectedIndex,
     required this.onTabChanged,
     required this.onMicTap,
+    this.showCaregiverTab = true,
   });
 
-  /// Tab index: 0 = Home, 1 = Meds, 2 = Schedule, 3 = Caregiver.
+  /// Tab index: 0 = Home, 1 = Meds, 2 = Schedule, 3 = Caregiver or Settings.
   final int selectedIndex;
   final ValueChanged<int> onTabChanged;
   final VoidCallback onMicTap;
+
+  /// When false, the 4th tab is Settings instead of Caregiver.
+  final bool showCaregiverTab;
 
   @override
   Widget build(BuildContext context) {
@@ -94,9 +98,15 @@ class VerifiBottomNavBar extends StatelessWidget {
                         ),
                         Expanded(
                           child: _TabItem(
-                            icon: Icons.people_outline_rounded,
-                            activeIcon: Icons.people_rounded,
-                            label: l10n.caregiver,
+                            icon: showCaregiverTab
+                                ? Icons.people_outline_rounded
+                                : Icons.settings_outlined,
+                            activeIcon: showCaregiverTab
+                                ? Icons.people_rounded
+                                : Icons.settings_rounded,
+                            label: showCaregiverTab
+                                ? l10n.caregiver
+                                : l10n.settings,
                             selected: selectedIndex == 3,
                             onTap: () => onTabChanged(3),
                             compact: !wide,
