@@ -16,15 +16,18 @@ Implemented (UI shell):
 - Schedule — single-line day strip with month separators (unbounded into the
   past, +2 months ahead) + Morning/Afternoon/Evening sections
 - Settings — language (EN/PT), profile name, sign out
-- Medication Alarm — full-screen clock-style UI triggered by OS notifications
+- Medication Alarm — full-screen clock-style UI (looping alarm tone, take /
+  snooze) opened by the OS alarm
 - Bottom tab bar with center mic FAB
 
 Schedule & alarms:
 - Recurrence: every N days (`frequency_days`), plus meal anchors
   ("after breakfast/lunch/dinner") that resolve to 08:00 / 14:00 / 20:00.
-- OS-level alarms via `flutter_local_notifications`: doses ring as
-  notifications with sound + full-screen intent, and "snooze" reschedules a
-  one-off reminder.
+- Real full-screen alarms via `flutter_local_notifications` + AlarmManager:
+  doses are scheduled with `exactAllowWhileIdle`, a loud alarm tone, vibration,
+  and a full-screen intent that opens the alarm UI over the lock screen — even
+  when the app was killed (Android). Snooze reschedules a one-off reminder.
+  iOS is limited to a sound notification (no background full-screen takeover).
 
 Supabase backend:
 - Email/password auth (sign in / sign up) with session restore + sign out
@@ -42,6 +45,8 @@ Deferred (stubbed): Voice mode, Camera/scan flow, Caregiver.
 - [provider](https://pub.dev/packages/provider) for state
 - [supabase_flutter](https://pub.dev/packages/supabase_flutter) for auth + data
 - [flutter_local_notifications](https://pub.dev/packages/flutter_local_notifications) for OS alarms
+- [audioplayers](https://pub.dev/packages/audioplayers) for the looping alarm tone
+- [wakelock_plus](https://pub.dev/packages/wakelock_plus) to keep the alarm screen awake
 - `flutter_localizations` + `intl` for English/Portuguese (follows the system locale)
 
 ## Architecture
