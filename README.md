@@ -1,17 +1,36 @@
-# medication_reminder
+# Certo
 
-A new Flutter project.
+A calm, voice-and-camera-first medication reminder app. This is the Flutter UI
+shell (design system + core screens + mock data), built from `idea.md`.
 
-## Getting Started
+## Status
 
-This project is a starting point for a Flutter application.
+Implemented (UI shell):
+- Onboarding
+- Home — today's checklist with notification banner and "mark as taken"
+- My Medications — list with All/Active/Paused/Finished filters
+- Add Medication — scan/manual entry point (+ recent list)
+- Medication Detail — dosage, schedule, started date, notes
+- Schedule — 7-day strip + Morning/Afternoon/Evening sections
+- Medication Alarm — lock-screen style overlay
+- Bottom tab bar with center mic FAB
 
-A few resources to get you started if this is your first Flutter project:
+Deferred (stubbed): Voice mode, Camera/scan flow, Caregiver.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+## Stack
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- Flutter (Material 3)
+- [provider](https://pub.dev/packages/provider) for state
+
+## Run
+
+```sh
+flutter pub get
+flutter run          # pick a device (Android/iOS/web)
+flutter test         # smoke test
+```
+
+## Design tokens
+
+Colors and typography live in `lib/theme/`. The medication "pill" avatar and
+the AI "gradient orb" are reusable widgets in `lib/widgets/`.
