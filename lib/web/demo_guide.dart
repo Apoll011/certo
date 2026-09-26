@@ -133,6 +133,7 @@ DemoGuideContent guideFor({
             'Email and password unlock cloud sync for medications and dose history.',
         tips: [
           'Create an account if you’re new.',
+          'Or tap “Open as demo user” on sign-up to try a random persona with sample meds — no account needed.',
           'Without Supabase config the app still runs on local demo data.',
         ],
       );
@@ -146,6 +147,7 @@ DemoGuideContent guideFor({
           'Email and password unlock cloud sync for medications and dose history.',
       tips: [
         'Create an account if you’re new.',
+        'Or tap “Open as demo user” on sign-up to try a random persona with sample meds — no account needed.',
         'Without Supabase config the app still runs on local demo data.',
       ],
     );

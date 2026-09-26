@@ -64,6 +64,21 @@ class SettingsScreen extends StatelessWidget {
                                   state.userEmail!,
                                   style: textTheme.bodySmall,
                                 ),
+                              ] else if (state.isDemoSession) ...[
+                                const SizedBox(height: 3),
+                                Text(
+                                  state.demoEmail ?? l10n.demoAccountLabel,
+                                  style: textTheme.bodySmall,
+                                ),
+                                if (state.demoTagline != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    state.demoTagline!,
+                                    style: textTheme.bodySmall?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ],
                           ),
@@ -212,7 +227,7 @@ class SettingsScreen extends StatelessWidget {
                       onChanged: (v) => state.setShowCaregiverTab(v),
                     ),
                   ),
-                  if (state.isAuthenticated) ...[
+                  if (state.isAuthenticated || state.isDemoSession) ...[
                     const SizedBox(height: AppSpacing.xxl),
                     _sectionLabel(context, l10n.account),
                     AppCard(

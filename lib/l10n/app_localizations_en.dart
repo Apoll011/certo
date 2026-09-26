@@ -278,6 +278,16 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authFillAll => 'Please enter your email and password.';
 
   @override
+  String get openAsDemoUser => 'Open as demo user';
+
+  @override
+  String get openAsDemoUserHint =>
+      'Skip sign-up — try a random person with sample medications.';
+
+  @override
+  String get demoAccountLabel => 'Demo account';
+
+  @override
   String get signOut => 'Sign out';
 
   @override

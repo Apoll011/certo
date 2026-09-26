@@ -85,6 +85,17 @@ class AppState extends ChangeNotifier {
   /// Auth form visible (vs onboarding) while signed out. Chrome guide uses this.
   bool showAuthForm = false;
 
+  /// Local demo session (no Supabase user) entered via “Open as demo user”.
+  bool isDemoSession = false;
+
+  /// Email shown in Settings for the active demo persona, if any.
+  String? demoEmail;
+
+  /// Tagline / short bio for the active demo persona.
+  String? demoTagline;
+
+  String? _demoPersonaId;
+
   void markEnteredMainShell() {
     if (hasEnteredMainShell) return;
     hasEnteredMainShell = true;
@@ -240,6 +251,8 @@ class AppState extends ChangeNotifier {
     _authSub = client.auth.onAuthStateChange.listen((event) {
       final session = event.session;
       if (session == null) {
+        // Don't kick a local demo session when Supabase reports signed-out.
+        if (isDemoSession) return;
         _onSignedOut();
       } else {
         _onSignedIn(session.user);
@@ -257,11 +270,17 @@ class AppState extends ChangeNotifier {
 
   Future<void> _onSignedIn(User user) async {
     _user = user;
+    isDemoSession = false;
+    demoEmail = null;
+    demoTagline = null;
+    _demoPersonaId = null;
     // Drop any demo/stale rows before the server data arrives.
     medications.clear();
     // Keep takenIds until dose history rebuilds them for today.
     await _refreshData();
     authStatus = AuthStatus.signedIn;
+    hasEnteredMainShell = true;
+    showAuthForm = false;
     notifyListeners();
     await _syncAlarms();
   }
@@ -271,6 +290,10 @@ class AppState extends ChangeNotifier {
     authStatus = AuthStatus.signedOut;
     hasEnteredMainShell = false;
     showAuthForm = false;
+    isDemoSession = false;
+    demoEmail = null;
+    demoTagline = null;
+    _demoPersonaId = null;
     _seedMock();
     _restoreTakenIdsFromPrefs();
     notifyListeners();
@@ -418,6 +441,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    if (isDemoSession) {
+      _onSignedOut();
+      return;
+    }
     try {
       await SupabaseService.client.auth.signOut();
     } catch (e) {
@@ -425,6 +452,71 @@ class AppState extends ChangeNotifier {
     }
     // Auth listener also handles this; do it defensively in case it hasn't.
     _onSignedOut();
+  }
+
+  /// Opens the app as a random offline persona with sample meds + history.
+  ///
+  /// No Supabase account is created. Ideal for trying the product from the
+  /// sign-up / sign-in screen.
+  Future<void> enterDemoSession() async {
+    final persona = pickRandomDemoPersona(exceptId: _demoPersonaId);
+    _user = null;
+    isDemoSession = true;
+    _demoPersonaId = persona.id;
+    demoEmail = persona.emailHint;
+    demoTagline = persona.tagline;
+    userName = persona.name;
+    isCaregiver = persona.isCaregiver;
+    role = persona.isCaregiver ? 'family_caregiver' : 'individual';
+    showCaregiverTab = true;
+    showAuthForm = false;
+    hasEnteredMainShell = true;
+
+    medications
+      ..clear()
+      ..addAll(persona.medications.map((m) => m));
+    doseHistory
+      ..clear()
+      ..addAll(buildDemoDoseHistory(persona));
+    careRecipients.clear();
+    grantedCareLinks.clear();
+    careSnapshots.clear();
+    _snoozedUntil.clear();
+
+    _rebuildTakenIdsFromHistory();
+    // Mark one morning dose taken today so Home isn't empty of progress.
+    final todayActive = medications
+        .where((m) => m.status == MedicationStatus.active)
+        .toList();
+    if (todayActive.isNotEmpty && !takenIds.contains(todayActive.first.id)) {
+      // Only add if history didn't already mark it.
+      final already = doseHistory.any(
+        (e) =>
+            e.medicationId == todayActive.first.id &&
+            e.action == 'taken' &&
+            e.at.year == DateTime.now().year &&
+            e.at.month == DateTime.now().month &&
+            e.at.day == DateTime.now().day,
+      );
+      if (!already) {
+        takenIds.add(todayActive.first.id);
+        doseHistory.insert(
+          0,
+          DoseLogEntry(
+            id: 'demo-today-${todayActive.first.id}',
+            medicationId: todayActive.first.id,
+            medicationName: todayActive.first.name,
+            action: 'taken',
+            at: DateTime.now().subtract(const Duration(hours: 1)),
+          ),
+        );
+      }
+    }
+    await _persistTakenIds();
+
+    authStatus = AuthStatus.signedIn;
+    notifyListeners();
+    await _syncAlarms();
   }
 
   // ---------------------------------------------------------------------------

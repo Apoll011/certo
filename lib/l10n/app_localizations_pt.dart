@@ -279,6 +279,16 @@ class AppLocalizationsPt extends AppLocalizations {
   String get authFillAll => 'Informe seu e-mail e senha.';
 
   @override
+  String get openAsDemoUser => 'Abrir como usuário demo';
+
+  @override
+  String get openAsDemoUserHint =>
+      'Pule o cadastro — experimente como uma pessoa aleatória com medicamentos de exemplo.';
+
+  @override
+  String get demoAccountLabel => 'Conta demo';
+
+  @override
   String get signOut => 'Sair';
 
   @override

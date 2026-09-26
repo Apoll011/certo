@@ -584,6 +584,24 @@ abstract class AppLocalizations {
   /// **'Please enter your email and password.'**
   String get authFillAll;
 
+  /// No description provided for @openAsDemoUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Open as demo user'**
+  String get openAsDemoUser;
+
+  /// No description provided for @openAsDemoUserHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip sign-up — try a random person with sample medications.'**
+  String get openAsDemoUserHint;
+
+  /// No description provided for @demoAccountLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Demo account'**
+  String get demoAccountLabel;
+
   /// No description provided for @signOut.
   ///
   /// In en, this message translates to:

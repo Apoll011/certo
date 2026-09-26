@@ -162,11 +162,30 @@ class _AuthScreenState extends State<AuthScreen> {
                       const SizedBox(height: AppSpacing.xxl),
                       if (_loading)
                         const Center(child: CircularProgressIndicator())
-                      else
+                      else ...[
                         PrimaryButton(
                           label: _isSignUp ? l10n.signUp : l10n.signIn,
                           onPressed: _submit,
                         ),
+                        if (_isSignUp) ...[
+                          const SizedBox(height: AppSpacing.md),
+                          PrimaryButton(
+                            label: l10n.openAsDemoUser,
+                            filled: false,
+                            icon: Icons.auto_awesome_rounded,
+                            onPressed: _openDemo,
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            l10n.openAsDemoUserHint,
+                            textAlign: TextAlign.center,
+                            style: textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ],
                       const SizedBox(height: AppSpacing.lg),
                       TextButton(
                         onPressed: _loading
@@ -219,6 +238,25 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _openDemo() async {
+    setState(() {
+      _loading = true;
+      _message = null;
+    });
+    try {
+      await context.read<AppState>().enterDemoSession();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _message = e.toString();
+      });
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _loading = false);
   }
 
   Future<void> _submit() async {
