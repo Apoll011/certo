@@ -4,8 +4,7 @@ import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/medication.dart';
 import '../state/app_state.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_spacing.dart';
 import '../utils/format.dart';
 import '../utils/schedule.dart';
 import '../utils/status.dart';
@@ -14,6 +13,7 @@ import '../widgets/circle_icon_button.dart';
 import '../widgets/icon_badge.dart';
 import '../widgets/pill_icon.dart';
 import '../widgets/primary_button.dart';
+import '../widgets/screen_header.dart';
 import 'manual_medication_form_screen.dart';
 
 /// Full info for a single medication.
@@ -28,68 +28,88 @@ class MedicationDetailScreen extends StatelessWidget {
     final locale = Localizations.localeOf(context).languageCode;
     final state = context.watch<AppState>();
     final med = state.medicationById(medicationId);
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     if (med == null) {
       return Scaffold(
-        backgroundColor: AppColors.background,
-        body: Center(child: Text(l10n.medicationNotFound)),
+        body: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.pageX,
+                  12,
+                  AppSpacing.pageX,
+                  AppSpacing.sm,
+                ),
+                child: ScreenHeader.back(
+                  title: l10n.medicationDetail,
+                  onBack: () => Navigator.of(context).pop(),
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    l10n.medicationNotFound,
+                    style: textTheme.bodyLarge,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       );
     }
 
     final taken = state.isTaken(med.id);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-              child: Row(
-                children: [
-                  CircleIconButton(
-                    icon: Icons.arrow_back_rounded,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        l10n.medicationDetail,
-                        style: AppTheme.headerMedium,
-                      ),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.pageX,
+                12,
+                AppSpacing.pageX,
+                AppSpacing.sm,
+              ),
+              child: ScreenHeader.back(
+                title: l10n.medicationDetail,
+                onBack: () => Navigator.of(context).pop(),
+                trailing: CircleIconButton(
+                  icon: Icons.edit_outlined,
+                  tooltip: l10n.editMedication,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          ManualMedicationFormScreen(medication: med),
                     ),
                   ),
-                  CircleIconButton(
-                    icon: Icons.edit_outlined,
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            ManualMedicationFormScreen(medication: med),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                padding: AppSpacing.pagePaddingTight,
                 children: [
                   Column(
                     children: [
                       PillIcon(colorIndex: med.pillColorIndex, size: 88),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: AppSpacing.lg),
                       Text(
                         med.name,
                         textAlign: TextAlign.center,
-                        style: AppTheme.headerMedium,
+                        style: textTheme.headlineMedium,
                       ),
-                      const SizedBox(height: 6),
-                      Text(med.category, style: AppTheme.bodyMedium),
+                      if (med.category.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(med.category, style: textTheme.bodyMedium),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppSpacing.xl),
                   Row(
                     children: [
                       for (final status in MedicationStatus.values)
@@ -98,14 +118,14 @@ class MedicationDetailScreen extends StatelessWidget {
                             padding: EdgeInsets.only(
                               right: status == MedicationStatus.values.last
                                   ? 0
-                                  : 8,
+                                  : AppSpacing.sm,
                             ),
                             child: _statusTile(context, med, status),
                           ),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xxl),
                   AppCard(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -114,31 +134,37 @@ class MedicationDetailScreen extends StatelessWidget {
                     child: Column(
                       children: [
                         _detailRow(
+                          context,
                           icon: Icons.medication_outlined,
                           label: l10n.dosage,
                           value:
                               '${l10n.takeDosage(med.dosage)}\n${med.instruction}',
                         ),
-                        const _Divider(),
+                        Divider(color: scheme.outlineVariant, height: 1),
                         _detailRow(
+                          context,
                           icon: Icons.schedule_rounded,
                           label: l10n.scheduleLabel,
                           value:
                               '${displayTimes(med.times, l10n)}\n'
                               '${med.frequencyDays == 1 ? l10n.everyDay : l10n.everyNDays(med.frequencyDays)}',
                         ),
-                        const _Divider(),
+                        Divider(color: scheme.outlineVariant, height: 1),
                         _detailRow(
+                          context,
                           icon: Icons.calendar_today_outlined,
                           label: l10n.started,
                           value: fullDate(med.startedAt, locale),
                         ),
-                        const _Divider(),
-                        _detailRow(
-                          icon: Icons.sticky_note_2_outlined,
-                          label: l10n.notes,
-                          value: med.notes,
-                        ),
+                        if (med.notes.isNotEmpty) ...[
+                          Divider(color: scheme.outlineVariant, height: 1),
+                          _detailRow(
+                            context,
+                            icon: Icons.sticky_note_2_outlined,
+                            label: l10n.notes,
+                            value: med.notes,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -147,15 +173,15 @@ class MedicationDetailScreen extends StatelessWidget {
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(
-                20,
-                8,
-                20,
-                12 + MediaQuery.of(context).padding.bottom,
+                AppSpacing.pageX,
+                AppSpacing.sm,
+                AppSpacing.pageX,
+                12 + MediaQuery.paddingOf(context).bottom,
               ),
               child: PrimaryButton(
                 label: taken ? l10n.taken : l10n.markAsTaken,
                 icon: taken ? Icons.check_rounded : null,
-                color: taken ? AppColors.success : AppColors.primary,
+                color: taken ? scheme.tertiary : scheme.primary,
                 onPressed: taken
                     ? null
                     : () {
@@ -163,11 +189,7 @@ class MedicationDetailScreen extends StatelessWidget {
                         ScaffoldMessenger.of(context)
                           ..hideCurrentSnackBar()
                           ..showSnackBar(
-                            SnackBar(
-                              content: Text(l10n.markedAsTaken),
-                              behavior: SnackBarBehavior.floating,
-                              duration: const Duration(seconds: 2),
-                            ),
+                            SnackBar(content: Text(l10n.markedAsTaken)),
                           );
                       },
               ),
@@ -187,59 +209,64 @@ class MedicationDetailScreen extends StatelessWidget {
     final state = context.read<AppState>();
     final selected = med.status == status;
     final color = statusColor(status);
+    final scheme = Theme.of(context).colorScheme;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: () async {
-        if (selected) return;
-        final messenger = ScaffoldMessenger.of(context);
-        await state.setMedicationStatus(med.id, status);
-        if (!context.mounted) return;
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(l10n.statusUpdated),
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 2),
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: statusLabel(l10n, status),
+      child: InkWell(
+        borderRadius: AppRadii.mdAll,
+        onTap: () async {
+          if (selected) return;
+          final messenger = ScaffoldMessenger.of(context);
+          await state.setMedicationStatus(med.id, status);
+          if (!context.mounted) return;
+          messenger
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(content: Text(l10n.statusUpdated)));
+        },
+        child: AnimatedContainer(
+          duration: AppDurations.fast,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? color : scheme.surface,
+            borderRadius: AppRadii.mdAll,
+            border: Border.all(
+              color: selected ? color : scheme.outlineVariant,
             ),
-          );
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: selected ? color : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: selected ? color : const Color(0xFFE2E2EA)),
-          boxShadow: selected ? AppColors.cardShadow : null,
-        ),
-        child: Column(
-          children: [
-            Icon(
-              statusIcon(status),
-              color: selected ? Colors.white : color,
-              size: 22,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              statusLabel(l10n, status),
-              style: TextStyle(
-                color: selected ? Colors.white : AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
+          ),
+          child: Column(
+            children: [
+              Icon(
+                statusIcon(status),
+                color: selected ? Colors.white : color,
+                size: 22,
               ),
-            ),
-          ],
+              const SizedBox(height: 4),
+              Text(
+                statusLabel(l10n, status),
+                style: TextStyle(
+                  color: selected ? Colors.white : scheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _detailRow({
+  Widget _detailRow(
+    BuildContext context, {
     required IconData icon,
     required String label,
     required String value,
   }) {
+    final textTheme = Theme.of(context).textTheme;
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Row(
@@ -251,16 +278,11 @@ class MedicationDetailScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: AppTheme.bodySmall),
+                Text(label, style: textTheme.bodySmall),
                 const SizedBox(height: 3),
                 Text(
                   value,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                    height: 1.35,
-                  ),
+                  style: textTheme.titleSmall?.copyWith(height: 1.35),
                 ),
               ],
             ),
@@ -268,14 +290,5 @@ class MedicationDetailScreen extends StatelessWidget {
         ],
       ),
     );
-  }
-}
-
-class _Divider extends StatelessWidget {
-  const _Divider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(height: 1, color: const Color(0xFFF0F0F4));
   }
 }

@@ -1,34 +1,61 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
 
-/// Circle outline -> filled indigo circle with a white check.
+/// Taken / not-taken control with a 48dp hit target and clear visual state.
 class TakenCheckbox extends StatelessWidget {
-  const TakenCheckbox({super.key, required this.taken, this.onToggle});
+  const TakenCheckbox({
+    super.key,
+    required this.taken,
+    this.onToggle,
+    this.semanticLabel,
+  });
 
   final bool taken;
   final VoidCallback? onToggle;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onToggle,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: taken ? AppColors.primary : Colors.transparent,
-          border: taken
-              ? null
-              : Border.all(color: const Color(0xFFC7C7D2), width: 2),
+    final scheme = Theme.of(context).colorScheme;
+
+    return Semantics(
+      checked: taken,
+      button: true,
+      label: semanticLabel,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onToggle,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: AppSpacing.touchTarget,
+            height: AppSpacing.touchTarget,
+            child: Center(
+              child: AnimatedContainer(
+                duration: AppDurations.fast,
+                curve: Curves.easeOut,
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: taken ? scheme.primary : Colors.transparent,
+                  border: taken
+                      ? null
+                      : Border.all(color: AppColors.textTertiary, width: 2),
+                ),
+                child: taken
+                    ? Icon(
+                        Icons.check_rounded,
+                        color: scheme.onPrimary,
+                        size: 18,
+                      )
+                    : null,
+              ),
+            ),
+          ),
         ),
-        child: taken
-            ? const Icon(Icons.check_rounded, color: Colors.white, size: 18)
-            : null,
       ),
     );
   }

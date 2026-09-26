@@ -44,7 +44,7 @@ class _AlarmScreenState extends State<AlarmScreen>
     duration: const Duration(milliseconds: 1100),
     lowerBound: 0.92,
     upperBound: 1.08,
-  )..repeat(reverse: true);
+  );
 
   Timer? _clockTimer;
   DateTime _now = DateTime.now();
@@ -64,6 +64,13 @@ class _AlarmScreenState extends State<AlarmScreen>
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _now = DateTime.now());
     });
+
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (!reduceMotion) {
+      _pulse.repeat(reverse: true);
+    } else {
+      _pulse.value = 1.0;
+    }
     _startRinging();
   }
 
@@ -236,9 +243,8 @@ class _AlarmScreenState extends State<AlarmScreen>
           l10n.alarmRinging,
           textAlign: TextAlign.center,
           style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.4,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
             color: Colors.white.withValues(alpha: 0.7),
           ),
         ),

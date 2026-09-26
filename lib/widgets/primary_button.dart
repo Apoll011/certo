@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
 
-/// A full-width, pill-shaped action button (solid or outlined).
+/// Full-width primary action button (filled or outlined).
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     super.key,
@@ -21,25 +21,21 @@ class PrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveColor = color ?? AppColors.primary;
-    final foreground =
-        filled ? Colors.white : AppColors.textPrimary;
+    final scheme = Theme.of(context).colorScheme;
+    final effectiveColor = color ?? scheme.primary;
 
     final content = Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (icon != null) ...[
-          Icon(icon, size: 20, color: foreground),
-          const SizedBox(width: 8),
+          Icon(icon, size: 20),
+          const SizedBox(width: AppSpacing.sm),
         ],
         Flexible(
           child: Text(
             label,
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: foreground,
-            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -48,15 +44,9 @@ class PrimaryButton extends StatelessWidget {
     if (!filled) {
       return SizedBox(
         width: double.infinity,
-        height: 56,
+        height: 52,
         child: OutlinedButton(
           onPressed: onPressed,
-          style: OutlinedButton.styleFrom(
-            backgroundColor: Colors.white,
-            foregroundColor: AppColors.textPrimary,
-            side: const BorderSide(color: Color(0xFFE2E2EA)),
-            shape: const StadiumBorder(),
-          ),
           child: content,
         ),
       );
@@ -64,16 +54,17 @@ class PrimaryButton extends StatelessWidget {
 
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: 52,
       child: FilledButton(
         onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: effectiveColor,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: effectiveColor,
-          disabledForegroundColor: Colors.white,
-          shape: const StadiumBorder(),
-        ),
+        style: color == null
+            ? null
+            : FilledButton.styleFrom(
+                backgroundColor: effectiveColor,
+                foregroundColor: scheme.onPrimary,
+                disabledBackgroundColor: effectiveColor.withValues(alpha: 0.45),
+                disabledForegroundColor: scheme.onPrimary,
+              ),
         child: content,
       ),
     );

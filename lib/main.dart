@@ -13,7 +13,6 @@ import 'services/alarm_service.dart';
 import 'services/alarm_sound_service.dart';
 import 'services/supabase_service.dart';
 import 'state/app_state.dart';
-import 'theme/app_colors.dart';
 import 'theme/app_theme.dart';
 import 'utils/format.dart';
 
@@ -216,14 +215,18 @@ class _SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
       body: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Image.asset('assets/icon.png', width: 96, height: 96),
-            const SizedBox(height: 32),
-            const CircularProgressIndicator(color: AppColors.primary),
+            Image.asset(
+              'assets/icon.png',
+              width: 88,
+              height: 88,
+              semanticLabel: 'Verifi',
+            ),
+            const SizedBox(height: 28),
+            const CircularProgressIndicator(),
           ],
         ),
       ),

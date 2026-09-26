@@ -6,11 +6,12 @@ import '../services/alarm_service.dart';
 import '../services/alarm_sound_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_spacing.dart';
 import '../widgets/app_card.dart';
 import '../widgets/circle_icon_button.dart';
+import '../widgets/screen_header.dart';
 
-/// Functional settings: language, profile name, account (sign out), about.
+/// Settings: language, profile, alarms, account.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -19,50 +20,45 @@ class SettingsScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final state = context.watch<AppState>();
     final systemCode = View.of(context).platformDispatcher.locale.languageCode;
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-              child: Row(
-                children: [
-                  CircleIconButton(
-                    icon: Icons.arrow_back_rounded,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Center(
-                      child: Text(l10n.settings, style: AppTheme.headerMedium),
-                    ),
-                  ),
-                  const SizedBox(width: 56),
-                ],
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.pageX,
+                12,
+                AppSpacing.pageX,
+                AppSpacing.sm,
+              ),
+              child: ScreenHeader.back(
+                title: l10n.settings,
+                onBack: () => Navigator.of(context).pop(),
               ),
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                padding: AppSpacing.pagePaddingTight,
                 children: [
-                  _sectionLabel(l10n.profile),
+                  _sectionLabel(context, l10n.profile),
                   AppCard(
                     child: Row(
                       children: [
-                        _avatar(state.userName),
+                        _avatar(context, state.userName),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(state.userName, style: AppTheme.titleMedium),
+                              Text(state.userName, style: textTheme.titleMedium),
                               if (state.userEmail != null) ...[
                                 const SizedBox(height: 3),
                                 Text(
                                   state.userEmail!,
-                                  style: AppTheme.bodySmall,
+                                  style: textTheme.bodySmall,
                                 ),
                               ],
                             ],
@@ -71,13 +67,14 @@ class SettingsScreen extends StatelessWidget {
                         CircleIconButton(
                           icon: Icons.edit_outlined,
                           size: 40,
+                          tooltip: l10n.editName,
                           onTap: () => _editName(context),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  _sectionLabel(l10n.language),
+                  const SizedBox(height: AppSpacing.xxl),
+                  _sectionLabel(context, l10n.language),
                   AppCard(
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     child: Column(
@@ -91,14 +88,14 @@ class SettingsScreen extends StatelessWidget {
                           selected: state.localeOverride == null,
                           onTap: () => state.setLocale(null),
                         ),
-                        _tileDivider(),
+                        Divider(color: scheme.outlineVariant, height: 1),
                         _languageTile(
                           context,
                           title: l10n.languageEnglish,
                           selected: state.localeOverride?.languageCode == 'en',
                           onTap: () => state.setLocale('en'),
                         ),
-                        _tileDivider(),
+                        Divider(color: scheme.outlineVariant, height: 1),
                         _languageTile(
                           context,
                           title: l10n.languagePortuguese,
@@ -108,56 +105,51 @@ class SettingsScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  _sectionLabel(l10n.alarm),
+                  const SizedBox(height: AppSpacing.xxl),
+                  _sectionLabel(context, l10n.alarm),
                   const _AlarmSoundTile(),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: AppSpacing.sm),
                   const _FullScreenAlarmTile(),
-                  const SizedBox(height: 24),
-                  _sectionLabel(l10n.notifications),
+                  const SizedBox(height: AppSpacing.xxl),
+                  _sectionLabel(context, l10n.notifications),
                   AppCard(
                     onTap: () =>
-                        _comingSoon(context, l10n.notificationsComingSoon),
+                        _toast(context, l10n.notificationsComingSoon),
                     child: Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.notifications_active_outlined,
-                          color: AppColors.textPrimary,
+                          color: scheme.onSurface,
                         ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Text(
                             l10n.notifications,
-                            style: AppTheme.titleMedium,
+                            style: textTheme.titleMedium,
                           ),
                         ),
-                        const Icon(
+                        Icon(
                           Icons.chevron_right_rounded,
-                          color: AppColors.textSecondary,
+                          color: scheme.onSurfaceVariant,
                           size: 26,
                         ),
                       ],
                     ),
                   ),
                   if (state.isAuthenticated) ...[
-                    const SizedBox(height: 24),
-                    _sectionLabel(l10n.account),
+                    const SizedBox(height: AppSpacing.xxl),
+                    _sectionLabel(context, l10n.account),
                     AppCard(
                       onTap: () => _confirmSignOut(context),
                       child: Row(
                         children: [
-                          const Icon(
-                            Icons.logout_rounded,
-                            color: AppColors.danger,
-                          ),
+                          Icon(Icons.logout_rounded, color: scheme.error),
                           const SizedBox(width: 14),
                           Expanded(
                             child: Text(
                               l10n.signOut,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.danger,
+                              style: textTheme.titleMedium?.copyWith(
+                                color: scheme.error,
                               ),
                             ),
                           ),
@@ -165,20 +157,21 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 24),
-                  _sectionLabel(l10n.about),
+                  const SizedBox(height: AppSpacing.xxl),
+                  _sectionLabel(context, l10n.about),
                   AppCard(
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.medication_rounded,
-                          color: AppColors.primary,
+                          color: scheme.primary,
                         ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Text(
                             l10n.aboutBody,
-                            style: AppTheme.bodyMedium,
+                            style: textTheme.bodyMedium,
                           ),
                         ),
                       ],
@@ -193,31 +186,28 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _sectionLabel(String text) {
+  Widget _sectionLabel(BuildContext context, String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Text(text.toUpperCase(), style: AppTheme.sectionLabel),
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Text(text, style: Theme.of(context).textTheme.titleSmall),
     );
   }
 
-  Widget _avatar(String name) {
+  Widget _avatar(BuildContext context, String name) {
     final initial = name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase();
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       width: 48,
       height: 48,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.primary, AppColors.secondary],
-        ),
+        color: scheme.primaryContainer,
       ),
       alignment: Alignment.center,
       child: Text(
         initial,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: scheme.primary,
           fontSize: 20,
           fontWeight: FontWeight.w700,
         ),
@@ -232,6 +222,9 @@ class SettingsScreen extends StatelessWidget {
     required bool selected,
     required VoidCallback onTap,
   }) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -242,10 +235,10 @@ class SettingsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: AppTheme.titleMedium),
+                  Text(title, style: textTheme.titleMedium),
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
-                    Text(subtitle, style: AppTheme.bodySmall),
+                    Text(subtitle, style: textTheme.bodySmall),
                   ],
                 ],
               ),
@@ -254,17 +247,13 @@ class SettingsScreen extends StatelessWidget {
               selected
                   ? Icons.radio_button_checked_rounded
                   : Icons.radio_button_off_rounded,
-              color: selected ? AppColors.primary : AppColors.textSecondary,
+              color: selected ? scheme.primary : scheme.onSurfaceVariant,
               size: 24,
             ),
           ],
         ),
       ),
     );
-  }
-
-  Widget _tileDivider() {
-    return const Divider(height: 1, thickness: 1, color: Color(0xFFF0F0F4));
   }
 
   Future<void> _editName(BuildContext context) async {
@@ -286,7 +275,7 @@ class SettingsScreen extends StatelessWidget {
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(l10n.cancel),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text),
             child: Text(l10n.save),
           ),
@@ -295,9 +284,7 @@ class SettingsScreen extends StatelessWidget {
     );
     if (name != null && name.trim().isNotEmpty) {
       await state.updateUserName(name);
-      if (context.mounted) {
-        _comingSoon(context, l10n.nameSaved);
-      }
+      if (context.mounted) _toast(context, l10n.nameSaved);
     }
   }
 
@@ -314,35 +301,29 @@ class SettingsScreen extends StatelessWidget {
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(l10n.cancel),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
             child: Text(l10n.signOut),
           ),
         ],
       ),
     );
     if (confirmed == true) {
-      // Leave settings before signing out so the user lands on onboarding.
       if (context.mounted) Navigator.of(context).pop();
       await state.signOut();
     }
   }
 
-  void _comingSoon(BuildContext context, String message) {
+  void _toast(BuildContext context, String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 }
 
-/// Settings tile that opens the native Android alarm-sound picker and shows the
-/// currently selected ringtone.
 class _AlarmSoundTile extends StatefulWidget {
   const _AlarmSoundTile();
 
@@ -377,7 +358,7 @@ class _AlarmSoundTileState extends State<_AlarmSoundTile> {
     final messenger = ScaffoldMessenger.of(context);
 
     final picked = await AlarmSoundService.pick();
-    if (picked == null || !mounted) return; // cancelled
+    if (picked == null || !mounted) return;
 
     await state.setAlarmSound(picked);
     if (!mounted) return;
@@ -386,19 +367,15 @@ class _AlarmSoundTileState extends State<_AlarmSoundTile> {
 
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(l10n.alarmSoundSaved),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      ..showSnackBar(SnackBar(content: Text(l10n.alarmSoundSaved)));
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final state = context.watch<AppState>();
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
     final subtitle = state.alarmSoundUri == null
         ? l10n.alarmSoundDefault
         : (_title ?? l10n.alarmSoundCustom);
@@ -407,24 +384,21 @@ class _AlarmSoundTileState extends State<_AlarmSoundTile> {
       onTap: _pickAlarmSound,
       child: Row(
         children: [
-          const Icon(
-            Icons.music_note_rounded,
-            color: AppColors.textPrimary,
-          ),
+          Icon(Icons.music_note_rounded, color: scheme.onSurface),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.alarmSound, style: AppTheme.titleMedium),
+                Text(l10n.alarmSound, style: textTheme.titleMedium),
                 const SizedBox(height: 2),
-                Text(subtitle, style: AppTheme.bodySmall),
+                Text(subtitle, style: textTheme.bodySmall),
               ],
             ),
           ),
-          const Icon(
+          Icon(
             Icons.chevron_right_rounded,
-            color: AppColors.textSecondary,
+            color: scheme.onSurfaceVariant,
             size: 26,
           ),
         ],
@@ -433,8 +407,6 @@ class _AlarmSoundTileState extends State<_AlarmSoundTile> {
   }
 }
 
-/// Settings tile showing whether full-screen alarms are allowed, and opening
-/// the Android permission page to enable them when they are not.
 class _FullScreenAlarmTile extends StatefulWidget {
   const _FullScreenAlarmTile();
 
@@ -467,13 +439,7 @@ class _FullScreenAlarmTileState extends State<_FullScreenAlarmTile> {
     if (enabled) {
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(l10n.alarmFullScreenEnabled),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        ..showSnackBar(SnackBar(content: Text(l10n.alarmFullScreenEnabled)));
     }
   }
 
@@ -481,6 +447,8 @@ class _FullScreenAlarmTileState extends State<_FullScreenAlarmTile> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final enabled = _enabled ?? true;
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     return AppCard(
       onTap: _onTap,
@@ -488,29 +456,25 @@ class _FullScreenAlarmTileState extends State<_FullScreenAlarmTile> {
         children: [
           Icon(
             Icons.fullscreen_rounded,
-            color: enabled ? AppColors.success : AppColors.textSecondary,
+            color: enabled ? AppColors.success : scheme.onSurfaceVariant,
           ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(l10n.alarmFullScreen, style: AppTheme.titleMedium),
+                Text(l10n.alarmFullScreen, style: textTheme.titleMedium),
                 const SizedBox(height: 2),
                 Text(
-                  enabled
-                      ? l10n.alarmFullScreenOn
-                      : l10n.alarmFullScreenOff,
-                  style: AppTheme.bodySmall,
+                  enabled ? l10n.alarmFullScreenOn : l10n.alarmFullScreenOff,
+                  style: textTheme.bodySmall,
                 ),
               ],
             ),
           ),
           Icon(
-            enabled
-                ? Icons.check_circle_rounded
-                : Icons.chevron_right_rounded,
-            color: enabled ? AppColors.success : AppColors.textSecondary,
+            enabled ? Icons.check_circle_rounded : Icons.chevron_right_rounded,
+            color: enabled ? AppColors.success : scheme.onSurfaceVariant,
             size: 26,
           ),
         ],

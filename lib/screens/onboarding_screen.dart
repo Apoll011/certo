@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_spacing.dart';
 import '../widgets/primary_button.dart';
 import 'main_shell.dart';
 
@@ -16,68 +15,69 @@ class OnboardingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final textTheme = Theme.of(context).textTheme;
+    final bottom = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Image.asset(
-                        'assets/wordmark.png',
-                        width: 260,
-                        fit: BoxFit.contain,
-                      ),
-                      const SizedBox(height: 48),
-                      Text(
-                        l10n.onboardingHeadline,
-                        textAlign: TextAlign.center,
-                        style: AppTheme.headerLarge,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        l10n.onboardingSubtitle,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          height: 1.5,
-                          color: AppColors.textSecondary,
+        child: AdaptiveContent(
+          maxWidth: 480,
+          child: Column(
+            children: [
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.xxxl,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Image.asset(
+                          'assets/wordmark.png',
+                          width: 220,
+                          fit: BoxFit.contain,
+                          semanticLabel: 'Verifi',
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: AppSpacing.xxxl),
+                        Text(
+                          l10n.onboardingHeadline,
+                          textAlign: TextAlign.center,
+                          style: textTheme.headlineLarge,
+                        ),
+                        const SizedBox(height: AppSpacing.lg),
+                        Text(
+                          l10n.onboardingSubtitle,
+                          textAlign: TextAlign.center,
+                          style: textTheme.bodyLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: PrimaryButton(
-                label: l10n.getStarted,
-                onPressed:
-                    onGetStarted ??
-                    () => Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (_) => const MainShell()),
-                    ),
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  AppSpacing.xxl,
+                  0,
+                  AppSpacing.xxl,
+                  16 + bottom,
+                ),
+                child: PrimaryButton(
+                  label: l10n.getStarted,
+                  onPressed: onGetStarted ??
+                      () => Navigator.of(context).pushReplacement(
+                            MaterialPageRoute(
+                              builder: (_) => const MainShell(),
+                            ),
+                          ),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            // iOS home-indicator bar
-            Container(
-              width: 134,
-              height: 5,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -69,6 +69,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get caregiver => 'Cuidador';
 
   @override
+  String get voiceMode => 'Modo de voz';
+
+  @override
   String get myMedications => 'Meus medicamentos';
 
   @override

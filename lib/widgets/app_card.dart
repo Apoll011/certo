@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
 
-/// A white rounded card with a soft shadow and optional tap ripple.
+/// Surface container for grouped content.
+///
+/// Default: flat white with a hairline outline (calm, native). Set [elevated]
+/// only for floating chrome that needs to lift above the page.
 class AppCard extends StatelessWidget {
   const AppCard({
     super.key,
     required this.child,
     this.onTap,
-    this.padding = const EdgeInsets.all(16),
+    this.padding = const EdgeInsets.all(AppSpacing.lg),
     this.color,
-    this.radius = 20,
+    this.radius = AppRadii.lg,
+    this.elevated = false,
+    this.bordered = true,
+    this.semanticLabel,
   });
 
   final Widget child;
@@ -18,16 +25,23 @@ class AppCard extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final Color? color;
   final double radius;
+  final bool elevated;
+  final bool bordered;
+  final String? semanticLabel;
 
   @override
   Widget build(BuildContext context) {
     final borderRadius = BorderRadius.circular(radius);
+    final scheme = Theme.of(context).colorScheme;
 
-    return Container(
+    Widget content = Container(
       decoration: BoxDecoration(
-        color: color ?? AppColors.card,
+        color: color ?? scheme.surface,
         borderRadius: borderRadius,
-        boxShadow: AppColors.cardShadow,
+        border: bordered && color == null
+            ? Border.all(color: scheme.outlineVariant)
+            : null,
+        boxShadow: elevated ? AppColors.cardShadow : null,
       ),
       child: Material(
         color: Colors.transparent,
@@ -39,5 +53,15 @@ class AppCard extends StatelessWidget {
         ),
       ),
     );
+
+    if (semanticLabel != null) {
+      content = Semantics(
+        label: semanticLabel,
+        button: onTap != null,
+        child: content,
+      );
+    }
+
+    return content;
   }
 }

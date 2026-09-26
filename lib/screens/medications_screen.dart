@@ -4,12 +4,12 @@ import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/medication.dart';
 import '../state/app_state.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_spacing.dart';
 import '../utils/schedule.dart';
 import '../widgets/circle_icon_button.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/medication_card.dart';
+import '../widgets/screen_header.dart';
 import 'add_medication_screen.dart';
 import 'medication_detail_screen.dart';
 
@@ -29,28 +29,28 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
     final l10n = AppLocalizations.of(context)!;
     final state = context.watch<AppState>();
     final list = state.medicationsWithStatus(_filter);
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     return SafeArea(
       bottom: false,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        padding: AppSpacing.pagePadding,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(l10n.myMedications, style: AppTheme.headerLarge),
-              ),
-              CircleIconButton(
-                icon: Icons.add_rounded,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const AddMedicationScreen(),
-                  ),
+          ScreenHeader(
+            title: l10n.myMedications,
+            large: true,
+            trailing: CircleIconButton(
+              icon: Icons.add_rounded,
+              tooltip: l10n.addMedication,
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AddMedicationScreen(),
                 ),
               ),
-            ],
+            ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpacing.sm),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -62,7 +62,7 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: AppSpacing.xl),
           if (list.isEmpty)
             _filter == null
                 ? EmptyState(
@@ -80,13 +80,13 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                     icon: Icons.search_off_rounded,
                     title: l10n.emptyFilterTitle,
                     subtitle: l10n.emptyFilterBody,
-                    iconColor: AppColors.info,
-                    iconBackground: AppColors.infoSoft,
+                    iconColor: scheme.secondary,
+                    iconBackground: scheme.secondaryContainer,
                   )
           else
             for (final m in list)
               Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: AppSpacing.md),
                 child: MedicationCard(
                   medication: m,
                   onTap: () => Navigator.of(context).push(
@@ -98,14 +98,12 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(m.dosageLine, style: AppTheme.bodyMedium),
-                      const SizedBox(height: 5),
+                      Text(m.dosageLine, style: textTheme.bodyMedium),
+                      const SizedBox(height: 4),
                       Text(
                         displayTimes(m.times, l10n),
-                        style: const TextStyle(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
+                        style: textTheme.labelLarge?.copyWith(
+                          color: scheme.primary,
                         ),
                       ),
                     ],
@@ -119,27 +117,24 @@ class _MedicationsScreenState extends State<MedicationsScreen> {
 
   Widget _filterChip(String label, MedicationStatus? value) {
     final selected = _filter == value;
-    return GestureDetector(
-      onTap: () => setState(() => _filter = value),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-        margin: const EdgeInsets.only(right: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: selected ? AppColors.primary : const Color(0xFFE2E2EA),
-          ),
-          boxShadow: selected ? AppColors.cardShadow : null,
+    final scheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: AppSpacing.sm),
+      child: FilterChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => setState(() => _filter = value),
+        selectedColor: scheme.primary,
+        checkmarkColor: scheme.onPrimary,
+        labelStyle: TextStyle(
+          color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+          fontWeight: FontWeight.w600,
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? Colors.white : AppColors.textSecondary,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
+        side: BorderSide(
+          color: selected ? scheme.primary : scheme.outline,
         ),
+        showCheckmark: false,
       ),
     );
   }

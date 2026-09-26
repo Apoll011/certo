@@ -4,12 +4,12 @@ import 'package:provider/provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/medication.dart';
 import '../state/app_state.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_spacing.dart';
 import '../utils/format.dart';
 import '../utils/schedule.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/medication_card.dart';
+import '../widgets/screen_header.dart';
 import '../widgets/taken_checkbox.dart';
 import 'medication_detail_screen.dart';
 
@@ -22,9 +22,8 @@ class _StripItem {
   final DateTime? day;
 }
 
-/// Schedule tab — a single-line, horizontally scrolling day strip with month
-/// separators. Navigation is unbounded into the past (as far as data exists)
-/// and limited to two months into the future.
+/// Schedule tab — horizontally scrolling day strip with morning/afternoon/
+/// evening sections for the selected day.
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
 
@@ -37,9 +36,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   final ScrollController _scrollController = ScrollController();
   bool _didInitialScroll = false;
 
-  // Fixed item widths keep the initial scroll-to-today offset deterministic.
-  static const double _dayItemWidth = 62; // 52 pill + 10 gap
-  static const double _sepItemWidth = 92; // 82 label + 10 gap
+  static const double _dayItemWidth = 58; // 48 pill + 10 gap
+  static const double _sepItemWidth = 88; // 78 label + 10 gap
 
   @override
   void initState() {
@@ -59,6 +57,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final l10n = AppLocalizations.of(context)!;
     final locale = Localizations.localeOf(context).languageCode;
     final state = context.watch<AppState>();
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -83,7 +83,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       });
     }
 
-    // Medications scheduled on the selected day (frequency + start aware).
     final medsForDay = active
         .where((m) => isScheduledOn(m, _selectedDate))
         .toList();
@@ -96,40 +95,49 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
-            child: Text(l10n.schedule, style: AppTheme.headerLarge),
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.pageX,
+              AppSpacing.pageTop,
+              AppSpacing.pageX,
+              AppSpacing.md,
+            ),
+            child: ScreenHeader(title: l10n.schedule, large: true),
           ),
           SizedBox(
-            height: 72,
+            height: 68,
             child: ListView.builder(
               controller: _scrollController,
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pageX),
               itemCount: items.length,
               itemBuilder: (context, i) => items[i].widget,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppSpacing.md),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.pageX),
             child: Text(
               isToday ? l10n.today : fullDate(_selectedDate, locale),
-              style: AppTheme.sectionLabel,
+              style: textTheme.titleSmall,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           Expanded(
             child: medsForDay.isEmpty
                 ? EmptyState(
                     icon: Icons.event_busy_outlined,
                     title: l10n.noScheduleTitle,
                     subtitle: l10n.noScheduleBody,
-                    iconColor: AppColors.info,
-                    iconBackground: AppColors.infoSoft,
-                    card: false,
+                    iconColor: scheme.secondary,
+                    iconBackground: scheme.secondaryContainer,
                   )
                 : ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    padding: const EdgeInsets.fromLTRB(
+                      AppSpacing.pageX,
+                      AppSpacing.sm,
+                      AppSpacing.pageX,
+                      AppSpacing.pageBottom,
+                    ),
                     children: [
                       _section(
                         context,
@@ -155,7 +163,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                         l10n.evening,
                         medsForDay
                             .where(
-                              (m) => resolveTimeMinutes(m.firstTime) >= 17 * 60,
+                              (m) =>
+                                  resolveTimeMinutes(m.firstTime) >= 17 * 60,
                             )
                             .toList(),
                         isToday: isToday,
@@ -167,10 +176,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ),
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // Day strip
-  // ---------------------------------------------------------------------------
 
   List<DateTime> _daysBetween(DateTime start, DateTime end) {
     final days = <DateTime>[];
@@ -190,8 +195,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final items = <_StripItem>[];
     DateTime? lastMonth;
     for (final day in days) {
-      final newMonth =
-          lastMonth == null ||
+      final newMonth = lastMonth == null ||
           day.year != lastMonth.year ||
           day.month != lastMonth.month;
       if (newMonth) {
@@ -229,24 +233,18 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   Widget _monthSeparator(String label) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       width: _sepItemWidth - 10,
-      height: 60,
+      height: 56,
       margin: const EdgeInsets.only(right: 10),
       alignment: Alignment.center,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.primarySoft,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: AppColors.primary,
-          ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: scheme.primary,
         ),
       ),
     );
@@ -258,53 +256,59 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     required bool selected,
     required bool isToday,
   }) {
-    final textColor = selected ? Colors.white : AppColors.textPrimary;
+    final scheme = Theme.of(context).colorScheme;
+    final textColor = selected ? scheme.onPrimary : scheme.onSurface;
 
-    return GestureDetector(
-      onTap: () => setState(() => _selectedDate = day),
-      child: Container(
-        width: 52,
-        height: 60,
-        margin: const EdgeInsets.only(right: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: isToday && !selected
-              ? Border.all(color: AppColors.primary, width: 1.5)
-              : (selected ? null : Border.all(color: const Color(0xFFE2E2EA))),
-          boxShadow: selected ? AppColors.cardShadow : null,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              shortWeekday(day, locale),
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: selected
-                    ? Colors.white.withValues(alpha: 0.85)
-                    : AppColors.textSecondary,
-              ),
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: fullDate(day, locale),
+      child: InkWell(
+        onTap: () => setState(() => _selectedDate = day),
+        borderRadius: AppRadii.mdAll,
+        child: AnimatedContainer(
+          duration: AppDurations.fast,
+          width: 48,
+          height: 56,
+          margin: const EdgeInsets.only(right: 10),
+          decoration: BoxDecoration(
+            color: selected ? scheme.primary : scheme.surface,
+            borderRadius: AppRadii.mdAll,
+            border: Border.all(
+              color: selected
+                  ? scheme.primary
+                  : (isToday ? scheme.primary : scheme.outlineVariant),
+              width: isToday && !selected ? 1.5 : 1,
             ),
-            const SizedBox(height: 4),
-            Text(
-              '${day.day}',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: textColor,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                shortWeekday(day, locale),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: selected
+                      ? scheme.onPrimary.withValues(alpha: 0.85)
+                      : scheme.onSurfaceVariant,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 2),
+              Text(
+                '${day.day}',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: textColor,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // Day list
-  // ---------------------------------------------------------------------------
 
   Widget _section(
     BuildContext context,
@@ -314,30 +318,22 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }) {
     if (meds.isEmpty) return const SizedBox.shrink();
     final state = context.read<AppState>();
+    final textTheme = Theme.of(context).textTheme;
     meds.sort(
-      (a, b) =>
-          resolveTimeMinutes(a.firstTime)
-              .compareTo(resolveTimeMinutes(b.firstTime)),
+      (a, b) => resolveTimeMinutes(a.firstTime)
+          .compareTo(resolveTimeMinutes(b.firstTime)),
     );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 12, bottom: 12),
-          child: Text(
-            label.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-              color: AppColors.textSecondary,
-            ),
-          ),
+          padding: const EdgeInsets.only(top: AppSpacing.md, bottom: AppSpacing.sm),
+          child: Text(label, style: textTheme.labelMedium),
         ),
         for (final m in meds)
           Padding(
-            padding: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.only(bottom: AppSpacing.md),
             child: MedicationCard(
               medication: m,
               onTap: () => Navigator.of(context).push(
@@ -345,10 +341,10 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   builder: (_) => MedicationDetailScreen(medicationId: m.id),
                 ),
               ),
-              // Only today's doses are markable.
               trailing: isToday
                   ? TakenCheckbox(
                       taken: state.isTaken(m.id),
+                      semanticLabel: m.name,
                       onToggle: () => state.toggleTaken(m.id),
                     )
                   : null,
@@ -357,10 +353,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ],
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
 
   DateTime? _earliestStart(List<Medication> meds) {
     DateTime? earliest;

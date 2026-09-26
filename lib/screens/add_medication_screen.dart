@@ -3,14 +3,13 @@ import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
-import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_spacing.dart';
 import '../utils/format.dart';
 import '../utils/ui.dart';
 import '../widgets/app_card.dart';
-import '../widgets/circle_icon_button.dart';
 import '../widgets/icon_badge.dart';
 import '../widgets/pill_icon.dart';
+import '../widgets/screen_header.dart';
 import 'manual_medication_form_screen.dart';
 import 'medication_detail_screen.dart';
 
@@ -23,45 +22,40 @@ class AddMedicationScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final state = context.watch<AppState>();
     final recent = state.recentMedications.take(4).toList();
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-              child: Row(
-                children: [
-                  CircleIconButton(
-                    icon: Icons.arrow_back_rounded,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        l10n.addMedication,
-                        style: AppTheme.headerMedium,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 56),
-                ],
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.pageX,
+                12,
+                AppSpacing.pageX,
+                AppSpacing.sm,
+              ),
+              child: ScreenHeader.back(
+                title: l10n.addMedication,
+                onBack: () => Navigator.of(context).pop(),
               ),
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                padding: AppSpacing.pagePaddingTight,
                 children: [
                   _optionCard(
+                    context,
                     icon: Icons.camera_alt_outlined,
                     title: l10n.scanPackage,
                     subtitle: l10n.scanPackageSubtitle,
-                    onTap: () => showComingSoon(context, l10n.cameraComingSoon),
+                    onTap: () =>
+                        showComingSoon(context, l10n.cameraComingSoon),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: AppSpacing.md),
                   _optionCard(
+                    context,
                     icon: Icons.edit_outlined,
                     title: l10n.addManually,
                     subtitle: l10n.addManuallySubtitle,
@@ -71,45 +65,51 @@ class AddMedicationScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 28),
-                  Text(l10n.recent, style: AppTheme.sectionLabel),
-                  const SizedBox(height: 12),
-                  for (final m in recent)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: AppCard(
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                MedicationDetailScreen(medicationId: m.id),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            PillIcon(colorIndex: m.pillColorIndex, size: 44),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(m.name, style: AppTheme.titleMedium),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    _addedAgo(l10n, m.startedAt),
-                                    style: AppTheme.bodySmall,
-                                  ),
-                                ],
+                  if (recent.isNotEmpty) ...[
+                    const SizedBox(height: AppSpacing.xxl),
+                    Text(l10n.recent, style: textTheme.titleSmall),
+                    const SizedBox(height: AppSpacing.md),
+                    for (final m in recent)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                        child: AppCard(
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => MedicationDetailScreen(
+                                medicationId: m.id,
                               ),
                             ),
-                            const Icon(
-                              Icons.chevron_right_rounded,
-                              color: AppColors.textSecondary,
-                              size: 26,
-                            ),
-                          ],
+                          ),
+                          child: Row(
+                            children: [
+                              PillIcon(
+                                colorIndex: m.pillColorIndex,
+                                size: 44,
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(m.name, style: textTheme.titleMedium),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      _addedAgo(l10n, m.startedAt),
+                                      style: textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                color: scheme.onSurfaceVariant,
+                                size: 26,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
+                  ],
                 ],
               ),
             ),
@@ -126,12 +126,16 @@ class AddMedicationScreen extends StatelessWidget {
     return l10n.addedDaysAgo(days);
   }
 
-  Widget _optionCard({
+  Widget _optionCard(
+    BuildContext context, {
     required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
   }) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
     return AppCard(
       onTap: onTap,
       child: Row(
@@ -142,15 +146,15 @@ class AddMedicationScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: AppTheme.titleMedium),
+                Text(title, style: textTheme.titleMedium),
                 const SizedBox(height: 3),
-                Text(subtitle, style: AppTheme.bodyMedium),
+                Text(subtitle, style: textTheme.bodyMedium),
               ],
             ),
           ),
-          const Icon(
+          Icon(
             Icons.chevron_right_rounded,
-            color: AppColors.textSecondary,
+            color: scheme.onSurfaceVariant,
             size: 26,
           ),
         ],

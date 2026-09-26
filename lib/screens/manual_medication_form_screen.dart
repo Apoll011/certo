@@ -5,11 +5,11 @@ import '../l10n/app_localizations.dart';
 import '../models/medication.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_spacing.dart';
 import '../utils/schedule.dart';
 import '../utils/status.dart';
-import '../widgets/circle_icon_button.dart';
 import '../widgets/primary_button.dart';
+import '../widgets/screen_header.dart';
 
 /// Manual "add medication" form. Pass [medication] to edit an existing one;
 /// otherwise it creates a new medication. Saves through [AppState], which
@@ -72,35 +72,33 @@ class _ManualMedicationFormScreenState
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
       body: SafeArea(
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-              child: Row(
-                children: [
-                  CircleIconButton(
-                    icon: Icons.arrow_back_rounded,
-                    onTap: () => Navigator.of(context).pop(),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Center(
-                      child: Text(
-                        _isEditing ? l10n.editMedication : l10n.addMedication,
-                        style: AppTheme.headerMedium,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 56),
-                ],
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.pageX,
+                12,
+                AppSpacing.pageX,
+                AppSpacing.sm,
+              ),
+              child: ScreenHeader.back(
+                title: _isEditing ? l10n.editMedication : l10n.addMedication,
+                onBack: () => Navigator.of(context).pop(),
               ),
             ),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.pageX,
+                  AppSpacing.sm,
+                  AppSpacing.pageX,
+                  AppSpacing.lg,
+                ),
                 children: [
                   _field(
                     l10n.medicationName,
@@ -108,28 +106,28 @@ class _ManualMedicationFormScreenState
                     hint: l10n.medicationNameHint,
                     icon: Icons.medication_outlined,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.lg),
                   _field(
                     l10n.dosage,
                     _dosageController,
                     hint: l10n.dosageHint,
                     icon: Icons.scale_outlined,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.lg),
                   _field(
                     l10n.instruction,
                     _instructionController,
                     hint: l10n.instructionHint,
                     icon: Icons.restaurant_outlined,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.lg),
                   _field(
                     l10n.category,
                     _categoryController,
                     hint: l10n.categoryHint,
                     icon: Icons.category_outlined,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppSpacing.lg),
                   _field(
                     l10n.notes,
                     _notesController,
@@ -137,20 +135,20 @@ class _ManualMedicationFormScreenState
                     icon: Icons.sticky_note_2_outlined,
                     maxLines: 3,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xxl),
                   _frequencySection(l10n),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xxl),
                   _timesSection(l10n),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xxl),
                   _colorSection(l10n),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xxl),
                   _statusSection(l10n),
                   if (_error != null) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.lg),
                     Text(
                       _error!,
-                      style: const TextStyle(
-                        color: AppColors.danger,
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: scheme.error,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -160,10 +158,10 @@ class _ManualMedicationFormScreenState
             ),
             Padding(
               padding: EdgeInsets.fromLTRB(
-                20,
-                8,
-                20,
-                12 + MediaQuery.of(context).padding.bottom,
+                AppSpacing.pageX,
+                AppSpacing.sm,
+                AppSpacing.pageX,
+                12 + MediaQuery.paddingOf(context).bottom,
               ),
               child: PrimaryButton(
                 label: l10n.saveMedication,
@@ -184,40 +182,20 @@ class _ManualMedicationFormScreenState
     required IconData icon,
     int maxLines = 1,
   }) {
+    final textTheme = Theme.of(context).textTheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: AppTheme.bodySmall),
+        Text(label, style: textTheme.labelMedium),
         const SizedBox(height: 6),
         TextField(
           controller: controller,
           maxLines: maxLines,
           textCapitalization: TextCapitalization.sentences,
-          style: const TextStyle(fontSize: 16, color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Icon(icon, color: AppColors.textSecondary, size: 20),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 16,
-              horizontal: 14,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: Color(0xFFE8E8F0)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(
-                color: AppColors.primary,
-                width: 1.5,
-              ),
-            ),
+            prefixIcon: Icon(icon, size: 20),
           ),
         ),
       ],
@@ -225,10 +203,13 @@ class _ManualMedicationFormScreenState
   }
 
   Widget _frequencySection(AppLocalizations l10n) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.frequency, style: AppTheme.bodySmall),
+        Text(l10n.frequency, style: textTheme.labelMedium),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
@@ -239,11 +220,11 @@ class _ManualMedicationFormScreenState
                 label: Text(_frequencyLabel(l10n, days)),
                 selected: _frequencyDays == days,
                 onSelected: (_) => setState(() => _frequencyDays = days),
-                selectedColor: AppColors.primary,
+                selectedColor: scheme.primary,
                 labelStyle: TextStyle(
                   color: _frequencyDays == days
-                      ? Colors.white
-                      : AppColors.textPrimary,
+                      ? scheme.onPrimary
+                      : scheme.onSurface,
                   fontWeight: FontWeight.w600,
                 ),
                 showCheckmark: false,
@@ -259,13 +240,14 @@ class _ManualMedicationFormScreenState
 
   Widget _timesSection(AppLocalizations l10n) {
     final clockTimes = _times.where((t) => !isMealToken(t)).toList();
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.times, style: AppTheme.bodySmall),
+        Text(l10n.times, style: textTheme.labelMedium),
         const SizedBox(height: 10),
-        // Meal anchors (breakfast / lunch / dinner).
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -282,12 +264,12 @@ class _ManualMedicationFormScreenState
                   }
                   _sortTimes();
                 }),
-                selectedColor: AppColors.primarySoft,
-                checkmarkColor: AppColors.primary,
+                selectedColor: scheme.primaryContainer,
+                checkmarkColor: scheme.primary,
                 labelStyle: TextStyle(
                   color: _times.contains(token)
-                      ? AppColors.primary
-                      : AppColors.textPrimary,
+                      ? scheme.primary
+                      : scheme.onSurface,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -303,10 +285,10 @@ class _ManualMedicationFormScreenState
                 InputChip(
                   label: Text(time),
                   onDeleted: () => setState(() => _times.remove(time)),
-                  deleteIconColor: AppColors.textSecondary,
-                  backgroundColor: AppColors.primarySoft,
-                  labelStyle: const TextStyle(
-                    color: AppColors.primary,
+                  deleteIconColor: scheme.onSurfaceVariant,
+                  backgroundColor: scheme.primaryContainer,
+                  labelStyle: TextStyle(
+                    color: scheme.primary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -318,10 +300,10 @@ class _ManualMedicationFormScreenState
           icon: const Icon(Icons.add_rounded, size: 20),
           label: Text(l10n.addTime),
           style: OutlinedButton.styleFrom(
-            foregroundColor: AppColors.primary,
-            side: const BorderSide(color: AppColors.primary),
+            foregroundColor: scheme.primary,
+            side: BorderSide(color: scheme.primary),
+            minimumSize: const Size(0, 44),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            shape: const StadiumBorder(),
           ),
         ),
       ],
@@ -329,41 +311,54 @@ class _ManualMedicationFormScreenState
   }
 
   Widget _colorSection(AppLocalizations l10n) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.pillColor, style: AppTheme.bodySmall),
+        Text(l10n.pillColor, style: textTheme.labelMedium),
         const SizedBox(height: 10),
         Row(
           children: [
             for (var i = 0; i < AppColors.pillPalette.length; i++)
-              GestureDetector(
-                onTap: () => setState(() => _pillColorIndex = i),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  margin: const EdgeInsets.only(right: 14),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.pillPalette[i][0],
-                        AppColors.pillPalette[i][1],
-                      ],
+              Semantics(
+                selected: _pillColorIndex == i,
+                button: true,
+                label: '${l10n.pillColor} ${i + 1}',
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => setState(() => _pillColorIndex = i),
+                  child: Container(
+                    width: AppSpacing.touchTarget,
+                    height: AppSpacing.touchTarget,
+                    alignment: Alignment.center,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            AppColors.pillPalette[i][0],
+                            AppColors.pillPalette[i][1],
+                          ],
+                        ),
+                        border: _pillColorIndex == i
+                            ? Border.all(color: scheme.primary, width: 3)
+                            : Border.all(color: scheme.outlineVariant),
+                      ),
+                      child: _pillColorIndex == i
+                          ? Icon(
+                              Icons.check_rounded,
+                              color: scheme.onPrimary,
+                              size: 18,
+                            )
+                          : null,
                     ),
-                    border: _pillColorIndex == i
-                        ? Border.all(color: AppColors.primary, width: 3)
-                        : null,
                   ),
-                  child: _pillColorIndex == i
-                      ? const Icon(
-                          Icons.check_rounded,
-                          color: Colors.white,
-                          size: 20,
-                        )
-                      : null,
                 ),
               ),
           ],
@@ -373,10 +368,13 @@ class _ManualMedicationFormScreenState
   }
 
   Widget _statusSection(AppLocalizations l10n) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(l10n.status, style: AppTheme.bodySmall),
+        Text(l10n.status, style: textTheme.labelMedium),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
@@ -394,7 +392,7 @@ class _ManualMedicationFormScreenState
                 onSelected: (_) => setState(() => _status = s),
                 selectedColor: statusColor(s),
                 labelStyle: TextStyle(
-                  color: _status == s ? Colors.white : AppColors.textPrimary,
+                  color: _status == s ? Colors.white : scheme.onSurface,
                   fontWeight: FontWeight.w600,
                 ),
                 showCheckmark: false,

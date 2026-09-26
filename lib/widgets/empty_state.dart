@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import '../theme/app_spacing.dart';
 import '../theme/app_theme.dart';
-import 'app_card.dart';
 import 'icon_badge.dart';
 import 'primary_button.dart';
 
-/// A friendly empty state used when a list has nothing to show.
+/// Empty state with a clear next step.
 ///
-/// By default it renders as a card (for use inside scrolling lists). Set
-/// [card] to false for a full-page centered variant that fills the space it
-/// is given.
+/// Kept quiet — no card chrome by default so emptiness doesn't look like
+/// clutter. Set [card] only when embedding inside a denser list.
 class EmptyState extends StatelessWidget {
   const EmptyState({
     super.key,
@@ -21,7 +20,7 @@ class EmptyState extends StatelessWidget {
     this.onAction,
     this.iconColor = AppColors.primary,
     this.iconBackground = AppColors.primarySoft,
-    this.card = true,
+    this.card = false,
   });
 
   final IconData icon;
@@ -32,58 +31,71 @@ class EmptyState extends StatelessWidget {
   final Color iconColor;
   final Color iconBackground;
 
-  /// When false, centers the content to fill the available space (no card).
+  /// When true, wraps content in a bordered surface (legacy list embedding).
   final bool card;
 
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
     final content = Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         IconBadge(
           icon: icon,
-          size: 64,
+          size: 56,
           color: iconBackground,
           iconColor: iconColor,
         ),
-        const SizedBox(height: 18),
-        Text(title, textAlign: TextAlign.center, style: AppTheme.headerMedium),
+        const SizedBox(height: AppSpacing.lg),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: textTheme.headlineSmall ?? AppTheme.headerMedium,
+        ),
         if (subtitle != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             subtitle!,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 15,
+            style: (textTheme.bodyMedium ?? AppTheme.bodyMedium).copyWith(
               height: 1.5,
-              color: AppColors.textSecondary,
+              color: scheme.onSurfaceVariant,
             ),
           ),
         ],
         if (actionLabel != null && onAction != null) ...[
-          const SizedBox(height: 20),
-          PrimaryButton(label: actionLabel!, onPressed: onAction),
+          const SizedBox(height: AppSpacing.xl),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 280),
+            child: PrimaryButton(label: actionLabel!, onPressed: onAction),
+          ),
         ],
       ],
     );
 
-    if (!card) {
-      return Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
-          child: content,
+    final padded = Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xxl,
+        vertical: AppSpacing.xl,
+      ),
+      child: content,
+    );
+
+    if (card) {
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          borderRadius: AppRadii.lgAll,
+          border: Border.all(color: scheme.outlineVariant),
         ),
+        child: padded,
       );
     }
 
-    return AppCard(
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-          content,
-          const SizedBox(height: 8),
-        ],
-      ),
+    return Center(
+      child: SingleChildScrollView(child: padded),
     );
   }
 }

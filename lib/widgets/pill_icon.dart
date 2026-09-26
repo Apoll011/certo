@@ -46,9 +46,9 @@ class PillIcon extends StatelessWidget {
               ),
               boxShadow: [
                 BoxShadow(
-                  color: colors[1].withValues(alpha: 0.35),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
+                  color: colors[1].withValues(alpha: 0.22),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
                 ),
               ],
             ),

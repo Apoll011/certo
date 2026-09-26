@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../models/medication.dart';
-import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import 'app_card.dart';
 import 'pill_icon.dart';
 
-/// A reusable medication list row: pill avatar + name + subtitle + trailing.
+/// Medication list row: pill avatar + name + subtitle + trailing.
+///
+/// [subtitle] always appears *under* the medication name — it never replaces
+/// the title.
 class MedicationCard extends StatelessWidget {
   const MedicationCard({
     super.key,
@@ -23,45 +25,49 @@ class MedicationCard extends StatelessWidget {
   /// Right-side widget (checkbox, chevron, etc.). Defaults to a chevron.
   final Widget? trailing;
 
-  /// Custom subtitle widget; defaults to the gray dosage/instruction line.
+  /// Extra lines under the name; defaults to the dosage/instruction line.
   final Widget? subtitle;
 
   final double pillSize;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
     return AppCard(
       onTap: onTap,
+      semanticLabel: medication.name,
       child: Row(
         children: [
           PillIcon(colorIndex: medication.pillColorIndex, size: pillSize),
           const SizedBox(width: 14),
           Expanded(
-            child: subtitle ??
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      medication.name,
-                      style: AppTheme.titleMedium,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  medication.name,
+                  style: textTheme.titleMedium ?? AppTheme.titleMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                subtitle ??
                     Text(
                       medication.dosageLine,
-                      style: AppTheme.bodyMedium,
-                      maxLines: 1,
+                      style: textTheme.bodyMedium ?? AppTheme.bodyMedium,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                  ],
-                ),
+              ],
+            ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           trailing ??
-              const Icon(
+              Icon(
                 Icons.chevron_right_rounded,
-                color: AppColors.textSecondary,
+                color: scheme.onSurfaceVariant,
                 size: 26,
               ),
         ],

@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
-
-/// A rounded-square icon badge with a pastel background and a line icon.
+/// Soft icon badge used for list leading icons and empty states.
 class IconBadge extends StatelessWidget {
   const IconBadge({
     super.key,
@@ -19,16 +17,18 @@ class IconBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: color ?? AppColors.primarySoft,
+        color: color ?? scheme.primaryContainer,
         borderRadius: BorderRadius.circular(size * 0.28),
       ),
       child: Icon(
         icon,
-        color: iconColor ?? AppColors.primary,
+        color: iconColor ?? scheme.primary,
         size: size * 0.48,
       ),
     );

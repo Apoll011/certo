@@ -69,6 +69,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get caregiver => 'Caregiver';
 
   @override
+  String get voiceMode => 'Voice mode';
+
+  @override
   String get myMedications => 'My medications';
 
   @override

@@ -194,6 +194,12 @@ abstract class AppLocalizations {
   /// **'Caregiver'**
   String get caregiver;
 
+  /// No description provided for @voiceMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice mode'**
+  String get voiceMode;
+
   /// No description provided for @myMedications.
   ///
   /// In en, this message translates to:
