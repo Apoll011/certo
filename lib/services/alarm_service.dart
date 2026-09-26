@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -12,9 +13,9 @@ import '../utils/schedule.dart';
 
 /// Schedules OS-level alarm notifications for medication doses.
 ///
-/// Notifications ring like a clock alarm even when the app is backgrounded
-/// (subject to each platform's rules) and, when tapped, open the in-app alarm
-/// UI via [onOpenAlarm].
+/// Doses ring like a clock alarm even when the app is backgrounded or killed:
+/// the notification uses a full-screen intent (Android) that opens the alarm
+/// UI over the lock screen via [onOpenAlarm] / [consumeInitialPayload].
 class AlarmService {
   AlarmService._();
 
@@ -29,6 +30,10 @@ class AlarmService {
   static void Function(String medicationId, String? time)? onOpenAlarm;
 
   static bool _initialized = false;
+
+  /// Launch details captured on cold start, when the app was (re)launched by
+  /// the OS to deliver a full-screen alarm.
+  static NotificationAppLaunchDetails? _launchDetails;
 
   static const String _channelId = 'medication_alarms';
   static const String _channelName = 'Medication reminders';
@@ -70,6 +75,31 @@ class AlarmService {
     await android?.requestNotificationsPermission();
     await android?.requestExactAlarmsPermission();
     await android?.requestFullScreenIntentPermission();
+
+    try {
+      _launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    } catch (e) {
+      debugPrint('Certo: launch-details lookup failed — $e');
+    }
+  }
+
+  /// The payload the app was launched with (full-screen alarm on cold start),
+  /// decoded and cleared so it is only consumed once.
+  static ({String medicationId, String? time})? consumeInitialPayload() {
+    final payload = _launchDetails?.notificationResponse?.payload;
+    _launchDetails = null;
+    return payload == null ? null : _decodePayload(payload);
+  }
+
+  static ({String medicationId, String? time})? _decodePayload(String payload) {
+    try {
+      final map = jsonDecode(payload) as Map<String, dynamic>;
+      final medicationId = map['medicationId'] as String?;
+      if (medicationId == null) return null;
+      return (medicationId: medicationId, time: map['time'] as String?);
+    } catch (_) {
+      return null;
+    }
   }
 
   static void _onResponse(NotificationResponse response) {
@@ -78,16 +108,8 @@ class AlarmService {
 
   static void _dispatch(String? payload) {
     if (payload == null) return;
-    String? medicationId;
-    String? time;
-    try {
-      final map = jsonDecode(payload) as Map<String, dynamic>;
-      medicationId = map['medicationId'] as String?;
-      time = map['time'] as String?;
-    } catch (_) {
-      return;
-    }
-    if (medicationId != null) onOpenAlarm?.call(medicationId, time);
+    final decoded = _decodePayload(payload);
+    if (decoded != null) onOpenAlarm?.call(decoded.medicationId, decoded.time);
   }
 
   /// Cancels all pending notifications and schedules the next occurrences of
@@ -141,7 +163,7 @@ class AlarmService {
   }
 
   static NotificationDetails _details() {
-    return const NotificationDetails(
+    return NotificationDetails(
       android: AndroidNotificationDetails(
         _channelId,
         _channelName,
@@ -150,7 +172,11 @@ class AlarmService {
         priority: Priority.high,
         category: AndroidNotificationCategory.alarm,
         fullScreenIntent: true,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound('alarm'),
         audioAttributesUsage: AudioAttributesUsage.alarm,
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 600, 400, 600]),
       ),
       iOS: DarwinNotificationDetails(
         presentAlert: true,

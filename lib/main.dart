@@ -60,9 +60,25 @@ class _RootState extends State<_Root> {
     _state = context.read<AppState>();
     _state.addListener(_onAppStateChanged);
     AlarmService.onOpenAlarm = _openAlarm;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _state.bootstrap();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _afterFirstFrame());
+  }
+
+  /// Bootstraps data, then routes to the alarm screen if the OS launched the
+  /// app to deliver a full-screen alarm (cold start).
+  Future<void> _afterFirstFrame() async {
+    try {
+      await _state.bootstrap();
+    } catch (e) {
+      debugPrint('Certo: bootstrap failed — $e');
+    }
+    if (!mounted) return;
+    _maybeOpenInitialAlarm();
+  }
+
+  void _maybeOpenInitialAlarm() {
+    final payload = AlarmService.consumeInitialPayload();
+    if (payload == null) return;
+    _openAlarm(payload.medicationId, payload.time);
   }
 
   void _openAlarm(String medicationId, String? time) {
