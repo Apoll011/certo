@@ -174,5 +174,12 @@
   },
   "takeNow": "Take now",
   "nothingDueToday": "Nothing due today",
-  "nothingDueTodayBody": "You have no doses scheduled for today."
+  "nothingDueTodayBody": "You have no doses scheduled for today.",
+
+  "status": "Status",
+  "statusActive": "Active",
+  "statusPaused": "Paused",
+  "statusFinished": "Finished",
+  "statusUpdated": "Status updated ✓",
+  "medicationUpdated": "Medication updated ✓"
 }

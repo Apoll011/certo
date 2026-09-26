@@ -7,13 +7,18 @@ import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/schedule.dart';
+import '../utils/status.dart';
 import '../widgets/circle_icon_button.dart';
 import '../widgets/primary_button.dart';
 
-/// Manual "add medication" form. Saves through [AppState.addMedication],
-/// which writes to Supabase when signed in and to local state otherwise.
+/// Manual "add medication" form. Pass [medication] to edit an existing one;
+/// otherwise it creates a new medication. Saves through [AppState], which
+/// writes to Supabase when signed in and to local state otherwise.
 class ManualMedicationFormScreen extends StatefulWidget {
-  const ManualMedicationFormScreen({super.key});
+  const ManualMedicationFormScreen({super.key, this.medication});
+
+  /// When non-null, the form is pre-filled and saves via update.
+  final Medication? medication;
 
   @override
   State<ManualMedicationFormScreen> createState() =>
@@ -31,8 +36,27 @@ class _ManualMedicationFormScreenState
   final List<String> _times = [];
   int _frequencyDays = 1;
   int _pillColorIndex = 0;
+  MedicationStatus _status = MedicationStatus.active;
   bool _saving = false;
   String? _error;
+
+  bool get _isEditing => widget.medication != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final m = widget.medication;
+    if (m == null) return;
+    _nameController.text = m.name;
+    _dosageController.text = m.dosage;
+    _instructionController.text = m.instruction;
+    _categoryController.text = m.category;
+    _notesController.text = m.notes;
+    _times.addAll(m.times);
+    _frequencyDays = m.frequencyDays;
+    _pillColorIndex = m.pillColorIndex;
+    _status = m.status;
+  }
 
   @override
   void dispose() {
@@ -65,7 +89,7 @@ class _ManualMedicationFormScreenState
                   Expanded(
                     child: Center(
                       child: Text(
-                        l10n.addMedication,
+                        _isEditing ? l10n.editMedication : l10n.addMedication,
                         style: AppTheme.headerMedium,
                       ),
                     ),
@@ -119,6 +143,8 @@ class _ManualMedicationFormScreenState
                   _timesSection(l10n),
                   const SizedBox(height: 24),
                   _colorSection(l10n),
+                  const SizedBox(height: 24),
+                  _statusSection(l10n),
                   if (_error != null) ...[
                     const SizedBox(height: 16),
                     Text(
@@ -346,6 +372,39 @@ class _ManualMedicationFormScreenState
     );
   }
 
+  Widget _statusSection(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(l10n.status, style: AppTheme.bodySmall),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final s in MedicationStatus.values)
+              ChoiceChip(
+                label: Text(statusLabel(l10n, s)),
+                avatar: Icon(
+                  statusIcon(s),
+                  size: 18,
+                  color: _status == s ? Colors.white : statusColor(s),
+                ),
+                selected: _status == s,
+                onSelected: (_) => setState(() => _status = s),
+                selectedColor: statusColor(s),
+                labelStyle: TextStyle(
+                  color: _status == s ? Colors.white : AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+                showCheckmark: false,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Future<void> _addTime() async {
     final now = TimeOfDay.now();
     final picked = await showTimePicker(context: context, initialTime: now);
@@ -388,29 +447,48 @@ class _ManualMedicationFormScreenState
       _error = null;
     });
 
-    final med = Medication(
-      id: 'manual-${DateTime.now().microsecondsSinceEpoch}',
-      name: name,
-      dosage: _dosageController.text.trim(),
-      instruction: _instructionController.text.trim(),
-      category: _categoryController.text.trim(),
-      notes: _notesController.text.trim(),
-      times: List.of(_times),
-      pillColorIndex: _pillColorIndex,
-      status: MedicationStatus.active,
-      startedAt: DateTime.now(),
-      frequencyDays: _frequencyDays,
-    );
-
     final state = context.read<AppState>();
-    await state.addMedication(med);
+    final existing = widget.medication;
+
+    if (existing == null) {
+      final med = Medication(
+        id: 'manual-${DateTime.now().microsecondsSinceEpoch}',
+        name: name,
+        dosage: _dosageController.text.trim(),
+        instruction: _instructionController.text.trim(),
+        category: _categoryController.text.trim(),
+        notes: _notesController.text.trim(),
+        times: List.of(_times),
+        pillColorIndex: _pillColorIndex,
+        status: _status,
+        startedAt: DateTime.now(),
+        frequencyDays: _frequencyDays,
+      );
+      await state.addMedication(med);
+    } else {
+      await state.updateMedication(
+        existing.copyWith(
+          name: name,
+          dosage: _dosageController.text.trim(),
+          instruction: _instructionController.text.trim(),
+          category: _categoryController.text.trim(),
+          notes: _notesController.text.trim(),
+          times: List.of(_times),
+          pillColorIndex: _pillColorIndex,
+          status: _status,
+          frequencyDays: _frequencyDays,
+        ),
+      );
+    }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Text(l10n.medicationSaved),
+          content: Text(
+            existing == null ? l10n.medicationSaved : l10n.medicationUpdated,
+          ),
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
         ),

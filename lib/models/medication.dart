@@ -50,6 +50,34 @@ class Medication {
   /// The first scheduled time, with a safe fallback.
   String get firstTime => times.isEmpty ? '9:00 AM' : times.first;
 
+  /// Returns a copy with the given fields replaced (everything else retained).
+  Medication copyWith({
+    String? name,
+    String? dosage,
+    String? instruction,
+    String? category,
+    String? notes,
+    List<String>? times,
+    int? pillColorIndex,
+    MedicationStatus? status,
+    DateTime? startedAt,
+    int? frequencyDays,
+  }) {
+    return Medication(
+      id: id,
+      name: name ?? this.name,
+      dosage: dosage ?? this.dosage,
+      instruction: instruction ?? this.instruction,
+      category: category ?? this.category,
+      notes: notes ?? this.notes,
+      times: times ?? this.times,
+      pillColorIndex: pillColorIndex ?? this.pillColorIndex,
+      status: status ?? this.status,
+      startedAt: startedAt ?? this.startedAt,
+      frequencyDays: frequencyDays ?? this.frequencyDays,
+    );
+  }
+
   /// Parses a row returned by the Supabase Data API (snake_case columns).
   factory Medication.fromJson(Map<String, dynamic> json) {
     return Medication(

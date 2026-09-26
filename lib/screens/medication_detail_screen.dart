@@ -2,17 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/medication.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../utils/schedule.dart';
-import '../utils/ui.dart';
+import '../utils/status.dart';
 import '../widgets/app_card.dart';
 import '../widgets/circle_icon_button.dart';
 import '../widgets/icon_badge.dart';
 import '../widgets/pill_icon.dart';
 import '../widgets/primary_button.dart';
+import 'manual_medication_form_screen.dart';
 
 /// Full info for a single medication.
 class MedicationDetailScreen extends StatelessWidget {
@@ -60,7 +62,12 @@ class MedicationDetailScreen extends StatelessWidget {
                   ),
                   CircleIconButton(
                     icon: Icons.edit_outlined,
-                    onTap: () => showComingSoon(context, l10n.editMedication),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ManualMedicationFormScreen(medication: med),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -80,6 +87,22 @@ class MedicationDetailScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(med.category, style: AppTheme.bodyMedium),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      for (final status in MedicationStatus.values)
+                        Expanded(
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              right: status == MedicationStatus.values.last
+                                  ? 0
+                                  : 8,
+                            ),
+                            child: _statusTile(context, med, status),
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -147,6 +170,63 @@ class MedicationDetailScreen extends StatelessWidget {
                             ),
                           );
                       },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusTile(
+    BuildContext context,
+    Medication med,
+    MedicationStatus status,
+  ) {
+    final l10n = AppLocalizations.of(context)!;
+    final state = context.read<AppState>();
+    final selected = med.status == status;
+    final color = statusColor(status);
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () async {
+        if (selected) return;
+        final messenger = ScaffoldMessenger.of(context);
+        await state.setMedicationStatus(med.id, status);
+        if (!context.mounted) return;
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(l10n.statusUpdated),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? color : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: selected ? color : const Color(0xFFE2E2EA)),
+          boxShadow: selected ? AppColors.cardShadow : null,
+        ),
+        child: Column(
+          children: [
+            Icon(
+              statusIcon(status),
+              color: selected ? Colors.white : color,
+              size: 22,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              statusLabel(l10n, status),
+              style: TextStyle(
+                color: selected ? Colors.white : AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
               ),
             ),
           ],

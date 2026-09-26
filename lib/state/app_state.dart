@@ -313,6 +313,21 @@ class AppState extends ChangeNotifier {
     await _syncAlarms();
   }
 
+  /// Changes a medication's lifecycle status (active / paused / finished).
+  ///
+  /// Pausing or finishing a medication also clears any pending snooze and
+  /// today's taken mark, and the alarm re-sync inside [updateMedication] drops
+  /// its scheduled notifications (only active medications get alarms).
+  Future<void> setMedicationStatus(String id, MedicationStatus status) async {
+    final med = medicationById(id);
+    if (med == null || med.status == status) return;
+    if (status != MedicationStatus.active) {
+      _snoozedUntil.remove(id);
+      takenIds.remove(id);
+    }
+    await updateMedication(med.copyWith(status: status));
+  }
+
   Future<void> deleteMedication(String id) async {
     final repo = _medsRepo;
     if (isAuthenticated && repo != null) {

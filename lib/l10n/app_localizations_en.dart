@@ -388,4 +388,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get nothingDueTodayBody => 'You have no doses scheduled for today.';
+
+  @override
+  String get status => 'Status';
+
+  @override
+  String get statusActive => 'Active';
+
+  @override
+  String get statusPaused => 'Paused';
+
+  @override
+  String get statusFinished => 'Finished';
+
+  @override
+  String get statusUpdated => 'Status updated ✓';
+
+  @override
+  String get medicationUpdated => 'Medication updated ✓';
 }

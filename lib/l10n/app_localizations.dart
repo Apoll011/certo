@@ -805,6 +805,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You have no doses scheduled for today.'**
   String get nothingDueTodayBody;
+
+  /// No description provided for @status.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get status;
+
+  /// No description provided for @statusActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get statusActive;
+
+  /// No description provided for @statusPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get statusPaused;
+
+  /// No description provided for @statusFinished.
+  ///
+  /// In en, this message translates to:
+  /// **'Finished'**
+  String get statusFinished;
+
+  /// No description provided for @statusUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Status updated ✓'**
+  String get statusUpdated;
+
+  /// No description provided for @medicationUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Medication updated ✓'**
+  String get medicationUpdated;
 }
 
 class _AppLocalizationsDelegate

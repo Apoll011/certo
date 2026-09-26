@@ -134,5 +134,12 @@
   "everyNDays": "A cada {n} dias",
   "takeNow": "Tomar agora",
   "nothingDueToday": "Nada para hoje",
-  "nothingDueTodayBody": "Você não tem doses agendadas para hoje."
+  "nothingDueTodayBody": "Você não tem doses agendadas para hoje.",
+
+  "status": "Estado",
+  "statusActive": "Ativo",
+  "statusPaused": "Pausado",
+  "statusFinished": "Concluído",
+  "statusUpdated": "Estado atualizado ✓",
+  "medicationUpdated": "Medicamento atualizado ✓"
 }
