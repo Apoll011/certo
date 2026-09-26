@@ -108,7 +108,6 @@ jobs:
         run: |
           flutter build appbundle --release \
             --build-name="${{ steps.version.outputs.build_name }}" \
-            --build-number="${{ steps.version.outputs.build_number }}" \
             --dart-define-from-file=/tmp/dart_defines.env
 
       - name: Verify artifacts

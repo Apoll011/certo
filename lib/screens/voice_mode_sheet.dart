@@ -137,11 +137,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   /// User spoke over TTS — skip remaining speaks and resume listen.
   bool _userInterrupted = false;
-  /// Ignore further TTS chunks after barge-in / cancel.
+  /// Ignore further TTS chunks after intentional interrupt / cancel.
   bool _ignoreTts = false;
-  /// STT was started only to detect barge-in over TTS.
-  bool _bargeInViaStt = false;
-  DateTime? _bargeSttArmUntil;
   /// Utterance captured while the interrupted AI turn was still winding down.
   String? _pendingAfterInterrupt;
 
@@ -149,7 +146,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   int _ttsSession = 0;
   int _playingSession = 0;
   bool _playInFlight = false;
-  Timer? _bargeInArmTimer;
   Timer? _playbackWatchdog;
 
   /// Smoothed mic amplitude 0–1 for the audio-reactive orb.
@@ -208,7 +204,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
   @override
   void dispose() {
     _endOfTurnTimer?.cancel();
-    _bargeInArmTimer?.cancel();
     _playbackWatchdog?.cancel();
     _layoutCtrl.dispose();
     _chatScroll.dispose();
@@ -273,14 +268,18 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       }
       return;
     }
-    // While ask_user is collecting a spoken reply, ignore for the main loop.
-    if (_collectingAskAnswer && event is! BargeInDetected) return;
+    // While ask_user owns the STT subscription, don't let the main loop steal
+    // transcripts — but still allow TTS chunks/Done through for _speakAloud.
+    if (_collectingAskAnswer &&
+        (event is TranscriptionPartial ||
+            event is TranscriptionFinal ||
+            event is BargeInDetected ||
+            event is VoiceAmplitude)) {
+      return;
+    }
     switch (event) {
       case TranscriptionPartial(:final text):
-        if (_phase == _VoicePhase.speaking && _bargeInViaStt) {
-          _maybeBargeInFromTranscript(text);
-          return;
-        }
+        // Never interrupt TTS from noise/transcripts — only listen while idle.
         if (_phase != _VoicePhase.listening) return;
         _endOfTurnTimer?.cancel();
         setState(() {
@@ -289,10 +288,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         });
 
       case TranscriptionFinal(:final text):
-        if (_phase == _VoicePhase.speaking && _bargeInViaStt) {
-          _maybeBargeInFromTranscript(text);
-          return;
-        }
         if (_phase != _VoicePhase.listening) return;
         if (text.trim().isEmpty) return;
         setState(() {
@@ -320,10 +315,17 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         unawaited(_playBufferedAudio());
 
       case BargeInDetected():
-        unawaited(_handleBargeIn());
+        // Auto barge-in is disabled — ambient noise must not cancel speech.
+        // Intentional interrupt is orb-tap only (_interruptSpeech).
+        debugPrint('VoiceMode: ignoring auto barge-in (noise-safe mode)');
 
       case VoiceError(:final message):
         debugPrint('VoiceMode UI error: $message');
+        // Don't kill an in-progress TTS playback for a non-TTS error.
+        if (_phase == _VoicePhase.speaking || _playInFlight) {
+          debugPrint('VoiceMode: suppressing error during speech: $message');
+          return;
+        }
         if (mounted) {
           setState(() {
             _phase = _VoicePhase.idle;
@@ -337,56 +339,20 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     }
   }
 
-  void _maybeBargeInFromTranscript(String text) {
-    if (_userInterrupted) return;
-    if (_bargeSttArmUntil != null &&
-        DateTime.now().isBefore(_bargeSttArmUntil!)) {
-      return;
-    }
-    if (text.trim().length < 2) return;
-    debugPrint('VoiceMode: barge-in via STT transcript "$text"');
-    unawaited(_handleBargeIn());
-  }
-
-  Future<void> _armBargeInDetection() async {
-    if (_userInterrupted || _ignoreTts) return;
-    // Stricter thresholds — false barge-in was cutting TTS with no audible output.
-    await _svc.startBargeInMonitor(
-      armDelay: const Duration(milliseconds: 500),
-      calibrateFor: const Duration(milliseconds: 600),
-      consecutiveChunks: 3,
-      minAbsoluteRms: 0.035,
-      overBaselineFactor: 2.8,
-      overBaselineAdd: 0.025,
-    );
-    if (_svc.isBargeInActive) return;
-
-    debugPrint('VoiceMode: barge-in falling back to STT');
-    _bargeSttArmUntil = DateTime.now().add(const Duration(milliseconds: 800));
-    _bargeInViaStt = true;
-    try {
-      await _svc.startListening();
-    } catch (e) {
-      debugPrint('VoiceMode: barge-in STT fallback failed: $e');
-      _bargeInViaStt = false;
-    }
-  }
-
-  Future<void> _handleBargeIn() async {
+  /// User intentionally stopped TTS (orb tap). Ambient noise never calls this.
+  Future<void> _interruptSpeech() async {
     if (!mounted) return;
     if (_phase != _VoicePhase.speaking && !_collectingAskAnswer) return;
     if (_userInterrupted && _phase == _VoicePhase.listening) return;
 
-    debugPrint('VoiceMode: barge-in — stopping TTS, listening again');
+    debugPrint('VoiceMode: intentional interrupt — stopping TTS');
     _userInterrupted = true;
     _ignoreTts = true;
-    _ttsSession++; // invalidate in-flight play / Done handlers
-    _bargeInArmTimer?.cancel();
+    _ttsSession++;
     _playbackWatchdog?.cancel();
-    final wasSttBarge = _bargeInViaStt;
-    _bargeInViaStt = false;
     _svc.cancelSpeak();
     await _svc.stopBargeInMonitor();
+    await _svc.stopListening();
     _audioBuffer.clear();
     try {
       await _player.stop();
@@ -401,19 +367,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     if (_collectingAskAnswer) {
       if (mounted) setState(() => _phase = _VoicePhase.listening);
       if (!_svc.isListening) await _svc.startListening();
-      return;
-    }
-
-    if (wasSttBarge && _svc.isListening) {
-      _endOfTurnTimer?.cancel();
-      if (mounted) {
-        setState(() {
-          _phase = _VoicePhase.listening;
-          _finalText = '';
-          _partialText = '';
-          _errorText = null;
-        });
-      }
       return;
     }
 
@@ -749,12 +702,15 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
     final session = ++_ttsSession;
     _ignoreTts = false;
+    _userInterrupted = false;
     _audioBuffer.clear();
-    _bargeInArmTimer?.cancel();
     _playbackWatchdog?.cancel();
     _speakDone = Completer<void>();
 
     try {
+      // Mic must be fully off during TTS — opening it cancels/mutes speech.
+      await _svc.stopBargeInMonitor();
+      await _svc.stopListening();
       try {
         await _player.stop();
       } catch (_) {}
@@ -782,7 +738,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       }
 
       await _speakDone!.future.timeout(
-        const Duration(seconds: 45),
+        const Duration(seconds: 60),
         onTimeout: () {
           debugPrint('VoiceMode: speakDone timed out (session $session)');
         },
@@ -791,13 +747,8 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       debugPrint('VoiceMode: speak failed: $e');
     } finally {
       if (session == _ttsSession) {
-        _bargeInArmTimer?.cancel();
         _playbackWatchdog?.cancel();
         await _svc.stopBargeInMonitor();
-        if (_bargeInViaStt && !_userInterrupted) {
-          _bargeInViaStt = false;
-          await _svc.stopListening();
-        }
         try {
           await _player.setVolume(1.0);
         } catch (_) {}
@@ -844,7 +795,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     final estimatedMs = (bytes.length / 16).round().clamp(800, 60000);
     _playbackWatchdog?.cancel();
     _playbackWatchdog = Timer(
-      Duration(milliseconds: estimatedMs + 2500),
+      Duration(milliseconds: estimatedMs + 3000),
       () {
         if (_playingSession != activeSession) return;
         if (_speakDone != null && !_speakDone!.isCompleted) {
@@ -857,7 +808,9 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
     );
 
     try {
-      // Full volume first — ducking + opening a 2nd mic often mutes the speaker.
+      // Ensure nothing else holds the audio focus.
+      await _svc.stopBargeInMonitor();
+      await _svc.stopListening();
       await _player.stop();
       await _player.setReleaseMode(ReleaseMode.stop);
       await _player.setVolume(1.0);
@@ -885,17 +838,12 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         return;
       }
 
-      // Delay barge-in mic so TTS can actually be heard. Opening the mic
-      // immediately steals audio focus on many Android devices.
-      _bargeInArmTimer?.cancel();
-      _bargeInArmTimer = Timer(const Duration(milliseconds: 1100), () {
-        if (_userInterrupted ||
-            _ignoreTts ||
-            activeSession != _ttsSession) {
-          return;
-        }
-        unawaited(_armBargeInDetection());
-      });
+      // No auto barge-in while speaking. Mic stays closed until TTS finishes
+      // so room noise / speaker echo cannot cancel playback.
+      debugPrint(
+        'VoiceMode: playing TTS (${bytes.length}b, ~${estimatedMs}ms) — '
+        'mic closed until done',
+      );
     } catch (e) {
       debugPrint('VoiceMode: Audio playback error: $e');
       _completeSpeakDone();
@@ -907,8 +855,6 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         _syncLayoutAnim();
       }
     }
-    // Keep _playInFlight true until playback completes / is cancelled so a
-    // duplicate TtsDone cannot start a second overlapping play.
   }
 
   void _scrollChatToEnd() {
@@ -956,7 +902,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       case _VoicePhase.listening:
         _finishListeningAndCallAi();
       case _VoicePhase.speaking:
-        unawaited(_handleBargeIn());
+        unawaited(_interruptSpeech());
       case _VoicePhase.thinking:
         break;
       case _VoicePhase.idle:
@@ -977,7 +923,7 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
         VoiceOrbPhase.active => 'Listening…',
         VoiceOrbPhase.speaking => 'Listening…',
         VoiceOrbPhase.processing => 'Thinking…',
-        VoiceOrbPhase.responding => 'Speaking…',
+        VoiceOrbPhase.responding => 'Speaking… tap orb to stop',
         VoiceOrbPhase.chat => 'Tap orb to speak',
       };
 
