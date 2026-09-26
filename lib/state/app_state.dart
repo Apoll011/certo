@@ -21,6 +21,8 @@ enum AuthStatus { loading, signedOut, signedIn }
 const String _kLocalePref = 'locale_override';
 const String _kNamePref = 'user_name';
 const String _kAlarmSoundPref = 'alarm_sound_uri';
+const String _kTakenIdsPref = 'taken_ids_today';
+const String _kTakenDatePref = 'taken_ids_date';
 
 /// Holds the app's working state: auth session, medications, taken set, tab.
 ///
@@ -177,6 +179,9 @@ class AppState extends ChangeNotifier {
         : null;
     AlarmService.setAlarmSoundUri(_alarmSoundUri);
 
+    // Restore today's "taken" marks before UI paints.
+    _restoreTakenIdsFromPrefs();
+
     if (!SupabaseService.isConfigured) {
       authStatus = AuthStatus.signedOut;
       notifyListeners();
@@ -211,7 +216,7 @@ class AppState extends ChangeNotifier {
     _user = user;
     // Drop any demo/stale rows before the server data arrives.
     medications.clear();
-    takenIds.clear();
+    // Keep takenIds until dose history rebuilds them for today.
     await _refreshData();
     authStatus = AuthStatus.signedIn;
     notifyListeners();
@@ -222,6 +227,7 @@ class AppState extends ChangeNotifier {
     _user = null;
     authStatus = AuthStatus.signedOut;
     _seedMock();
+    _restoreTakenIdsFromPrefs();
     notifyListeners();
   }
 
@@ -246,8 +252,66 @@ class AppState extends ChangeNotifier {
       ..clear()
       ..addAll(mockMedications);
     userName = _prefs?.getString(_kNamePref) ?? demoUserName;
-    takenIds.clear();
+    // Don't clear takenIds here — restored from prefs after seed / on bootstrap.
     doseHistory.clear();
+  }
+
+  /// Local calendar day key (yyyy-MM-dd) for "taken today" persistence.
+  static String _todayKey([DateTime? now]) {
+    final d = now ?? DateTime.now();
+    final y = d.year.toString().padLeft(4, '0');
+    final m = d.month.toString().padLeft(2, '0');
+    final day = d.day.toString().padLeft(2, '0');
+    return '$y-$m-$day';
+  }
+
+  static bool _isSameLocalDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// Restore [takenIds] from SharedPreferences when the saved day is today.
+  void _restoreTakenIdsFromPrefs() {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    final savedDay = prefs.getString(_kTakenDatePref);
+    final today = _todayKey();
+    if (savedDay != today) {
+      // New day — clear yesterday's marks.
+      takenIds.clear();
+      unawaited(prefs.remove(_kTakenIdsPref));
+      unawaited(prefs.setString(_kTakenDatePref, today));
+      return;
+    }
+    final ids = prefs.getStringList(_kTakenIdsPref) ?? const <String>[];
+    takenIds
+      ..clear()
+      ..addAll(ids);
+  }
+
+  Future<void> _persistTakenIds() async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    try {
+      await prefs.setString(_kTakenDatePref, _todayKey());
+      await prefs.setStringList(_kTakenIdsPref, takenIds.toList());
+    } catch (e) {
+      debugPrint('Verifi: persist taken ids failed — $e');
+    }
+  }
+
+  /// Rebuild today's taken set from [doseHistory] (newest action per med wins).
+  void _rebuildTakenIdsFromHistory() {
+    final now = DateTime.now();
+    final latestAction = <String, String>{};
+    for (final e in doseHistory) {
+      final at = e.at.toLocal();
+      if (!_isSameLocalDay(at, now)) continue;
+      // doseHistory is newest-first — first write wins as latest.
+      latestAction.putIfAbsent(e.medicationId, () => e.action);
+    }
+    takenIds.clear();
+    for (final entry in latestAction.entries) {
+      if (entry.value == 'taken') takenIds.add(entry.key);
+    }
   }
 
   /// Rebuilds the OS alarm schedule from the current medication list.
@@ -411,6 +475,7 @@ class AppState extends ChangeNotifier {
     if (status != MedicationStatus.active) {
       _snoozedUntil.remove(id);
       takenIds.remove(id);
+      unawaited(_persistTakenIds());
     }
     await updateMedication(med.copyWith(status: status));
   }
@@ -427,6 +492,7 @@ class AppState extends ChangeNotifier {
     medications.removeWhere((m) => m.id == id);
     takenIds.remove(id);
     _snoozedUntil.remove(id);
+    unawaited(_persistTakenIds());
     notifyListeners();
     await _syncAlarms();
   }
@@ -462,17 +528,22 @@ class AppState extends ChangeNotifier {
   void toggleTaken(String id) {
     if (!takenIds.add(id)) {
       takenIds.remove(id);
+      // Record skip so a later history rebuild does not revive "taken".
+      _logDoseLocally(id, 'skipped');
+      unawaited(_recordDose(id, 'skipped'));
     } else {
       _logDoseLocally(id, 'taken');
-      _recordDose(id, 'taken');
+      unawaited(_recordDose(id, 'taken'));
     }
+    unawaited(_persistTakenIds());
     notifyListeners();
   }
 
   void markTaken(String id) {
     if (takenIds.add(id)) {
       _logDoseLocally(id, 'taken');
-      _recordDose(id, 'taken');
+      unawaited(_recordDose(id, 'taken'));
+      unawaited(_persistTakenIds());
       notifyListeners();
     }
   }
@@ -481,7 +552,8 @@ class AppState extends ChangeNotifier {
   void skipDose(String id) {
     takenIds.remove(id);
     _logDoseLocally(id, 'skipped');
-    _recordDose(id, 'skipped');
+    unawaited(_recordDose(id, 'skipped'));
+    unawaited(_persistTakenIds());
     notifyListeners();
   }
 
@@ -571,9 +643,17 @@ class AppState extends ChangeNotifier {
       doseHistory
         ..clear()
         ..addAll(list);
+      // Restore today's checkmarks from server history (prefs as fallback).
+      if (list.isNotEmpty) {
+        _rebuildTakenIdsFromHistory();
+      } else {
+        _restoreTakenIdsFromPrefs();
+      }
+      await _persistTakenIds();
       notifyListeners();
     } catch (e) {
       debugPrint('Verifi: refresh dose history failed — $e');
+      _restoreTakenIdsFromPrefs();
     }
   }
 
