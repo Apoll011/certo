@@ -7,14 +7,22 @@ import '../state/app_state.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
-import '../widgets/app_card.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/medication_card.dart';
 import '../widgets/taken_checkbox.dart';
 import 'medication_detail_screen.dart';
 
-/// Schedule tab — a navigable month calendar up top, with the selected day's
-/// doses below. Navigation is unbounded into the past (as far as data exists)
+/// A single item in the horizontal day strip (a day pill or a month label).
+class _StripItem {
+  const _StripItem({required this.widget, required this.width, this.day});
+
+  final Widget widget;
+  final double width;
+  final DateTime? day;
+}
+
+/// Schedule tab — a single-line, horizontally scrolling day strip with month
+/// separators. Navigation is unbounded into the past (as far as data exists)
 /// and limited to two months into the future.
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
@@ -25,14 +33,24 @@ class ScheduleScreen extends StatefulWidget {
 
 class _ScheduleScreenState extends State<ScheduleScreen> {
   late DateTime _selectedDate;
-  late DateTime _visibleMonth;
+  final ScrollController _scrollController = ScrollController();
+  bool _didInitialScroll = false;
+
+  // Fixed item widths keep the initial scroll-to-today offset deterministic.
+  static const double _dayItemWidth = 62; // 52 pill + 10 gap
+  static const double _sepItemWidth = 92; // 82 label + 10 gap
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     _selectedDate = DateTime(now.year, now.month, now.day);
-    _visibleMonth = DateTime(now.year, now.month, 1);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -48,10 +66,21 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final active = state.medications
         .where((m) => m.status == MedicationStatus.active)
         .toList();
-    final minDate = _earliestStart(active) ?? today;
+    var minDate = _earliestStart(active) ?? today;
+    if (minDate.isAfter(today)) minDate = today;
 
-    final canGoPrev = _monthKey(_visibleMonth) > _monthKey(minDate);
-    final canGoNext = _monthKey(_visibleMonth) < _monthKey(maxDate);
+    final days = _daysBetween(minDate, maxDate);
+    final items = _buildStrip(days, locale: locale, today: today);
+
+    if (!_didInitialScroll) {
+      _didInitialScroll = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        final offset = _offsetForToday(items, today);
+        final max = _scrollController.position.maxScrollExtent;
+        _scrollController.jumpTo(offset.clamp(0.0, max));
+      });
+    }
 
     // Medications that were already active on the selected day.
     final medsForDay = active
@@ -66,21 +95,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
             child: Text(l10n.schedule, style: AppTheme.headerLarge),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: _calendar(
-              context,
-              locale: locale,
-              today: today,
-              maxDate: maxDate,
-              canGoPrev: canGoPrev,
-              canGoNext: canGoNext,
+          SizedBox(
+            height: 72,
+            child: ListView.builder(
+              controller: _scrollController,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: items.length,
+              itemBuilder: (context, i) => items[i].widget,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Text(
@@ -91,17 +119,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           const SizedBox(height: 4),
           Expanded(
             child: medsForDay.isEmpty
-                ? ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                    children: [
-                      EmptyState(
-                        icon: Icons.event_busy_outlined,
-                        title: l10n.noScheduleTitle,
-                        subtitle: l10n.noScheduleBody,
-                        iconColor: AppColors.info,
-                        iconBackground: AppColors.infoSoft,
-                      ),
-                    ],
+                ? EmptyState(
+                    icon: Icons.event_busy_outlined,
+                    title: l10n.noScheduleTitle,
+                    subtitle: l10n.noScheduleBody,
+                    iconColor: AppColors.info,
+                    iconBackground: AppColors.infoSoft,
+                    card: false,
                   )
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -144,154 +168,137 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Calendar
+  // Day strip
   // ---------------------------------------------------------------------------
 
-  Widget _calendar(
-    BuildContext context, {
+  List<DateTime> _daysBetween(DateTime start, DateTime end) {
+    final days = <DateTime>[];
+    var d = start;
+    while (!d.isAfter(end)) {
+      days.add(d);
+      d = DateTime(d.year, d.month, d.day + 1);
+    }
+    return days;
+  }
+
+  List<_StripItem> _buildStrip(
+    List<DateTime> days, {
     required String locale,
     required DateTime today,
-    required DateTime maxDate,
-    required bool canGoPrev,
-    required bool canGoNext,
   }) {
-    final y = _visibleMonth.year;
-    final m = _visibleMonth.month;
-    final daysInMonth = DateTime(y, m + 1, 0).day;
-    final leading = DateTime(y, m, 1).weekday - 1; // Monday-start grid.
-
-    return AppCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              _navButton(
-                Icons.chevron_left_rounded,
-                canGoPrev ? _goPrevMonth : null,
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    monthYear(_visibleMonth, locale),
-                    style: AppTheme.titleMedium,
-                  ),
-                ),
-              ),
-              _navButton(
-                Icons.chevron_right_rounded,
-                canGoNext ? _goNextMonth : null,
-              ),
-            ],
+    final items = <_StripItem>[];
+    DateTime? lastMonth;
+    for (final day in days) {
+      final newMonth =
+          lastMonth == null ||
+          day.year != lastMonth.year ||
+          day.month != lastMonth.month;
+      if (newMonth) {
+        items.add(
+          _StripItem(
+            widget: _monthSeparator(shortMonthYear(day, locale)),
+            width: _sepItemWidth,
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              for (var i = 0; i < 7; i++)
-                Expanded(
-                  child: Center(
-                    child: Text(
-                      shortWeekday(DateTime(2021, 1, 4 + i), locale),
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+        );
+        lastMonth = DateTime(day.year, day.month);
+      }
+      items.add(
+        _StripItem(
+          widget: _dayPill(
+            day,
+            locale: locale,
+            selected: _sameDay(day, _selectedDate),
+            isToday: _sameDay(day, today),
           ),
-          const SizedBox(height: 6),
-          GridView.count(
-            crossAxisCount: 7,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              for (var i = 0; i < leading; i++) const SizedBox.shrink(),
-              for (var d = 1; d <= daysInMonth; d++)
-                _dayCell(DateTime(y, m, d), today, maxDate),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _navButton(IconData icon, VoidCallback? onTap) {
-    return InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: AppColors.background,
+          width: _dayItemWidth,
+          day: day,
         ),
-        child: Icon(
-          icon,
-          size: 22,
-          color: onTap == null
-              ? AppColors.textSecondary.withValues(alpha: 0.4)
-              : AppColors.textPrimary,
-        ),
-      ),
-    );
-  }
-
-  Widget _dayCell(DateTime day, DateTime today, DateTime maxDate) {
-    final selected = _sameDay(day, _selectedDate);
-    final isToday = _sameDay(day, today);
-    final enabled = !day.isAfter(maxDate);
-
-    Color textColor;
-    if (!enabled) {
-      textColor = AppColors.textSecondary.withValues(alpha: 0.4);
-    } else if (selected) {
-      textColor = Colors.white;
-    } else if (isToday) {
-      textColor = AppColors.primary;
-    } else {
-      textColor = AppColors.textPrimary;
+      );
     }
+    return items;
+  }
 
-    return Padding(
-      padding: const EdgeInsets.all(3),
-      child: GestureDetector(
-        onTap: enabled ? () => setState(() => _selectedDate = day) : null,
-        child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: selected ? AppColors.primary : Colors.transparent,
-            border: isToday && !selected
-                ? Border.all(color: AppColors.primary, width: 1.5)
-                : null,
-          ),
-          child: Text(
-            '${day.day}',
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              color: textColor,
-            ),
+  double _offsetForToday(List<_StripItem> items, DateTime today) {
+    double offset = 0;
+    for (final item in items) {
+      if (item.day != null && _sameDay(item.day!, today)) return offset;
+      offset += item.width;
+    }
+    return 0;
+  }
+
+  Widget _monthSeparator(String label) {
+    return Container(
+      width: _sepItemWidth - 10,
+      height: 60,
+      margin: const EdgeInsets.only(right: 10),
+      alignment: Alignment.center,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.primarySoft,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: AppColors.primary,
           ),
         ),
       ),
     );
   }
 
-  void _goPrevMonth() {
-    setState(() {
-      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month - 1, 1);
-    });
-  }
+  Widget _dayPill(
+    DateTime day, {
+    required String locale,
+    required bool selected,
+    required bool isToday,
+  }) {
+    final textColor = selected ? Colors.white : AppColors.textPrimary;
 
-  void _goNextMonth() {
-    setState(() {
-      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1, 1);
-    });
+    return GestureDetector(
+      onTap: () => setState(() => _selectedDate = day),
+      child: Container(
+        width: 52,
+        height: 60,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: isToday && !selected
+              ? Border.all(color: AppColors.primary, width: 1.5)
+              : (selected ? null : Border.all(color: const Color(0xFFE2E2EA))),
+          boxShadow: selected ? AppColors.cardShadow : null,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              shortWeekday(day, locale),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: selected
+                    ? Colors.white.withValues(alpha: 0.85)
+                    : AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${day.day}',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: textColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -371,6 +378,4 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
   bool _sameDay(DateTime a, DateTime b) =>
       a.year == b.year && a.month == b.month && a.day == b.day;
-
-  int _monthKey(DateTime d) => d.year * 12 + d.month;
 }

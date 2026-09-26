@@ -12,6 +12,10 @@ String shortWeekday(DateTime d, String locale) =>
 String monthYear(DateTime d, String locale) =>
     '${DateFormat.MMMM(locale).format(d)} ${d.year}';
 
+/// Localized short month + year, e.g. "Apr 2026" / "abr. 2026".
+String shortMonthYear(DateTime d, String locale) =>
+    '${DateFormat.MMM(locale).format(d)} ${d.year}';
+
 /// Whole days elapsed since [d] (relative to today).
 int daysSince(DateTime d, {DateTime? now}) {
   final ref = now ?? DateTime.now();
