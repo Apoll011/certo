@@ -20,6 +20,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get getStarted => 'Começar';
 
   @override
+  String get downloadAndroidApp => 'Baixar o app Android';
+
+  @override
+  String get downloadAndroidAppHint =>
+      'Pegue o APK real no último release do GitHub.';
+
+  @override
   String greeting(String name) {
     return 'Bom dia, $name';
   }

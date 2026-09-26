@@ -4,6 +4,8 @@
   "onboardingHeadline": "Seu medicamento,\ndescomplicado.",
   "onboardingSubtitle": "Orientação clara. Identificação fácil.\nFeito para todos.",
   "getStarted": "Começar",
+  "downloadAndroidApp": "Baixar o app Android",
+  "downloadAndroidAppHint": "Pegue o APK real no último release do GitHub.",
 
   "greeting": "Bom dia, {name}",
   "timeForMedication": "Está na hora do seu medicamento",

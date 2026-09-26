@@ -116,6 +116,18 @@ abstract class AppLocalizations {
   /// **'Get started'**
   String get getStarted;
 
+  /// No description provided for @downloadAndroidApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Download the Android app'**
+  String get downloadAndroidApp;
+
+  /// No description provided for @downloadAndroidAppHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Get the real APK from the latest GitHub release.'**
+  String get downloadAndroidAppHint;
+
   /// No description provided for @greeting.
   ///
   /// In en, this message translates to:

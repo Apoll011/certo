@@ -159,11 +159,12 @@ DemoGuideContent guideFor({
       title: 'Meet Verifi',
       body:
           'A calm medication reminder with voice and camera verification — try the full phone UI in this frame.',
-      tips: [
-        'Tap Get started to enter the app.',
-        'Then explore Home, Meds, Schedule, and the mic.',
-        'Chrome desktop keeps everything in an iPhone-sized canvas.',
-      ],
+        tips: [
+          'Tap Get started to enter the app.',
+          'Download the real Android APK from GitHub Releases if you want it on your phone.',
+          'Then explore Home, Meds, Schedule, and the mic.',
+          'Chrome desktop keeps everything in an iPhone-sized canvas.',
+        ],
     );
   }
 

@@ -1,10 +1,16 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_localizations.dart';
 import '../theme/app_spacing.dart';
+import '../web/demo_nav.dart';
 import '../widgets/primary_button.dart';
 import 'main_shell.dart';
-import '../web/demo_nav.dart';
+
+/// Latest Android APK / release notes on GitHub.
+const String kVerifiLatestReleaseUrl =
+    'https://github.com/Apoll011/verifi/releases/latest';
 
 /// First-launch welcome / value-prop screen.
 class OnboardingScreen extends StatelessWidget {
@@ -17,6 +23,7 @@ class OnboardingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
     final bottom = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
@@ -51,7 +58,7 @@ class OnboardingScreen extends StatelessWidget {
                           l10n.onboardingSubtitle,
                           textAlign: TextAlign.center,
                           style: textTheme.bodyLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            color: scheme.onSurfaceVariant,
                             height: 1.5,
                           ),
                         ),
@@ -67,15 +74,41 @@ class OnboardingScreen extends StatelessWidget {
                   AppSpacing.xxl,
                   16 + bottom,
                 ),
-                child: PrimaryButton(
-                  label: l10n.getStarted,
-                  onPressed: onGetStarted ??
-                      () => Navigator.of(context).pushReplacement(
-                            MaterialPageRoute(
-                              settings: const RouteSettings(name: DemoRoutes.home),
-                              builder: (_) => const MainShell(),
-                            ),
-                          ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    PrimaryButton(
+                      label: l10n.getStarted,
+                      onPressed: onGetStarted ??
+                          () => Navigator.of(context).pushReplacement(
+                                MaterialPageRoute(
+                                  settings: const RouteSettings(
+                                    name: DemoRoutes.home,
+                                  ),
+                                  builder: (_) => const MainShell(),
+                                ),
+                              ),
+                    ),
+                    if (kIsWeb) ...[
+                      const SizedBox(height: AppSpacing.md),
+                      TextButton.icon(
+                        onPressed: () => openVerifiLatestRelease(),
+                        icon: const Icon(Icons.download_rounded, size: 18),
+                        label: Text(l10n.downloadAndroidApp),
+                        style: TextButton.styleFrom(
+                          foregroundColor: scheme.primary,
+                        ),
+                      ),
+                      Text(
+                        l10n.downloadAndroidAppHint,
+                        textAlign: TextAlign.center,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
@@ -83,5 +116,14 @@ class OnboardingScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Opens the GitHub Releases “latest” page in the browser / external app.
+Future<void> openVerifiLatestRelease() async {
+  final uri = Uri.parse(kVerifiLatestReleaseUrl);
+  final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+  if (!ok && kDebugMode) {
+    debugPrint('Could not launch $kVerifiLatestReleaseUrl');
   }
 }

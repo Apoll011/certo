@@ -147,25 +147,27 @@ class IPhoneFrame extends StatelessWidget {
                     top: 11 * scale,
                     left: 0,
                     right: 0,
-                    child: Center(
-                      child: Container(
-                        width: islandW,
-                        height: islandH,
-                        decoration: BoxDecoration(
-                          color: Colors.black,
-                          borderRadius: BorderRadius.circular(islandH),
-                        ),
-                        child: Align(
-                          alignment: const Alignment(0.55, 0),
-                          child: Container(
-                            width: math.max(8, 10 * scale),
-                            height: math.max(8, 10 * scale),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: const Color(0xFF1A1A1A),
-                              border: Border.all(
-                                color: const Color(0xFF0A2540),
-                                width: math.max(1, 1.5 * scale),
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Container(
+                          width: islandW,
+                          height: islandH,
+                          decoration: BoxDecoration(
+                            color: Colors.black,
+                            borderRadius: BorderRadius.circular(islandH),
+                          ),
+                          child: Align(
+                            alignment: const Alignment(0.55, 0),
+                            child: Container(
+                              width: math.max(8, 10 * scale),
+                              height: math.max(8, 10 * scale),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: const Color(0xFF1A1A1A),
+                                border: Border.all(
+                                  color: const Color(0xFF0A2540),
+                                  width: math.max(1, 1.5 * scale),
+                                ),
                               ),
                             ),
                           ),

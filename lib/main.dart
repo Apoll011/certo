@@ -77,7 +77,6 @@ class _RootState extends State<_Root> {
   void initState() {
     super.initState();
     _state = context.read<AppState>();
-    _state.addListener(_onAppStateChanged);
     AlarmService.onOpenAlarm = _openAlarm;
     AlarmSoundService.setAlarmFiredHandler(_openAlarm);
     _startForegroundAlarmCheck();
@@ -185,15 +184,7 @@ class _RootState extends State<_Root> {
   @override
   void dispose() {
     _foregroundAlarmTimer?.cancel();
-    _state.removeListener(_onAppStateChanged);
     super.dispose();
-  }
-
-  void _onAppStateChanged() {
-    // After signing out, land back on onboarding rather than the auth form.
-    if (_state.authStatus == AuthStatus.signedOut && _state.showAuthForm) {
-      _state.setShowAuthForm(false);
-    }
   }
 
   @override

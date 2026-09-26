@@ -4,6 +4,8 @@
   "onboardingHeadline": "Your medication,\nmade simple.",
   "onboardingSubtitle": "Clear guidance. Easy identification.\nBuilt for everyone.",
   "getStarted": "Get started",
+  "downloadAndroidApp": "Download the Android app",
+  "downloadAndroidAppHint": "Get the real APK from the latest GitHub release.",
 
   "greeting": "Good morning, {name}",
   "@greeting": {

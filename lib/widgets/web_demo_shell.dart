@@ -7,6 +7,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_spacing.dart';
 import '../web/demo_guide.dart';
 import '../web/demo_nav.dart';
+import '../screens/onboarding_screen.dart';
 import 'iphone_frame.dart';
 
 /// Desktop Chrome shell: iPhone mockup + contextual instructions when space.
@@ -296,6 +297,22 @@ class _GuideCard extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: openVerifiLatestRelease,
+                  icon: const Icon(Icons.download_rounded, size: 18),
+                  label: const Text('Download Android app'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.28),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
               ),
