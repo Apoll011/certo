@@ -1,0 +1,308 @@
+# Certo — Product Requirements Document
+
+**Tagline:** The safety check between "it's time" and "it's in your hand."
+
+**Status:** Hackathon MVP → early startup validation
+**Version:** 3.0
+**Stack:** Flutter, Supabase, ElevenLabs, AI APIs (LLM + OCR/CV), Cursor/DeepSeek for dev acceleration
+
+---
+
+## Executive Summary
+
+Certo is a voice-first safety check that verifies the specific medication someone is about to take actually matches what their schedule expects, at the exact moment they're holding it — closing a gap that reminder apps like Medisafe and MyTherapy don't touch, since those tools tell you *when* to take something but never check *what's in your hand*. It's built first for individuals managing their own medication — especially the 1 in 4 Portuguese seniors who live alone — with a professional caregiver tier as the path to revenue. Look-alike/sound-alike medication confusion alone is estimated to cause 6–15% of all medication errors, and Certo addresses exactly that failure mode with a closed-set camera check that returns one of three honest outcomes — match, mismatch, or "I'm not sure" — and never guesses. The product is credible precisely because it doesn't overreach: it's scoped, built, and positioned as a Class IIa medical device candidate from day one, with a staged compliance path rather than a wording trick to dodge regulation.
+
+---
+
+## 1. Problem Statement
+
+Medication management tools solve "remembering it's time" (reminders) or "what is this pill" (identification), but nothing verifies that the specific medication a person is about to take matches what their schedule expects, at the moment they're holding it. Medisafe and MyTherapy — the two most widely used medication apps in Europe — are reminder-and-adherence platforms: they prompt at the right time and log whether a dose was confirmed. Neither one looks at the physical item in the user's hand. That's the gap Certo closes.
+
+This gap shows up everywhere medication is self-administered or given by someone else: a person managing five prescriptions at home, someone with low vision who can't read a label, a person with cognitive difficulty who mixes up look-alike boxes, and a home-care aide juggling multiple clients on one shift.
+
+The scale of the underlying error is documented, not assumed:
+- The WHO estimates that roughly 1 in 30 patients suffer harm from medication errors, more than a quarter of it serious or life-threatening.
+- Look-alike/sound-alike (LASA) confusion — the exact failure mode Certo targets — is estimated across multiple studies to account for **6.2% to 14.7% of all medication errors**.
+- Portugal is the EU's third most aged country. Over 2.5 million people are 65+, one in four seniors live alone, and among women over 65 that rises to one in three. More than half of all one-person households in Portugal are elderly, making Portugal the EU's fourth-highest country for that specific share.
+
+Certo closes that gap for anyone in that position: schedule → expected item → physical verification → confirm/reject/uncertain → action logged.
+
+---
+
+## 2. Who Certo Is For
+
+Certo is built first as something a person manages for **themselves** — a daily safety check that removes the guesswork of "is this really what I'm supposed to take right now." The caregiver and institutional use cases are the same product, used by someone helping another person instead of themselves, and they are explicitly a **later stage**, not part of the hackathon build (see Section 5).
+
+### Individuals (core, self-serve — this is what gets built and demoed)
+- People managing multiple medications or a complicated schedule.
+- Elderly users who want a second check they can trust.
+- Blind or low-vision users who can't verify a label by sight.
+- People with low health literacy or cognitive load who find medication instructions hard to parse.
+
+This is the group the everyday experience is designed around, and where trust in the product has to be earned first — before it makes sense to anyone helping someone else, and before any institutional buyer would take it seriously.
+
+### Family caregivers (roadmap, not MVP)
+- A spouse, adult child, or family member helping someone manage medication, with that person's explicit permission.
+- Wants visibility into whether medication was taken, missed, or mismatched — without taking over the whole process.
+
+### Professional caregivers and small care facilities (roadmap — the business wedge)
+- Home-care aides and small elder-care facility staff administering medication to multiple clients per shift.
+- Real liability and training cost today; genuine willingness to pay via their employer.
+- This is where a sustainable business model comes from, but only once the individual-facing product has proven the core mechanic works — not before, and not in the hackathon build.
+
+---
+
+## 3. Core Product Principle
+
+> When the system is confident, simplify the interaction. When it isn't, expose the uncertainty — never guess.
+
+Three states only for any verification: **Confirmed match / Confirmed mismatch / Uncertain.** Uncertain never resolves to a best guess. This is the single idea the whole demo has to prove, and it's the reason the mismatch case has to be shown live, not described.
+
+---
+
+## 4. Core User Journey (MVP)
+
+1. User asks: *"What do I take now?"*
+2. Deterministic schedule engine identifies the one expected medication for the current time slot.
+3. System (voice) names that single expected medication and asks the user to show the package.
+4. User points the camera at the package.
+5. Verification layer checks the scanned package **against that one expected item only** (closed-set match, not open pill identification):
+   - **Match** → confirm aloud, read the saved instruction, offer to mark as taken.
+   - **Mismatch** → state plainly it doesn't match, name what's actually expected.
+   - **Uncertain** → say so, ask the user to try again or check with someone else; never guess.
+6. Action (taken / skipped / mismatch flagged) is logged.
+
+**Demo example:**
+> "Certo, what do I need to take now?"
+> *"You need to take your Amoxicillin now."*
+> *(user scans the correct box)*
+> *"This is your Amoxicillin. It matches what's scheduled for now. Take one capsule after food."*
+> User marks it as taken.
+
+> *(user scans the wrong box — e.g. a look-alike antihistamine)*
+> *"This doesn't match. You're scheduled for Amoxicillin, not this."*
+
+**Caregiver example (roadmap, not built for the hackathon):**
+> Aide asks: "What does Mrs. Silva take now?" — same flow, same three states, run against a different person's schedule.
+
+---
+
+## 5. Feature List
+
+### 5.1 Hackathon Build Scope (6 hours — what actually gets built and demoed)
+
+This is a deliberately narrow cut of the original MVP list. Everything here is chosen because it's buildable and demoable in 6 hours by a small team using Cursor/DeepSeek acceleration; anything cut is cut because it isn't, and each cut is explained.
+
+| Feature | Description | Layer |
+|---|---|---|
+| Seeded medication data | 3 pre-registered medications with name, dosage, instructions, one scheduled time each, and a reference photo taken in advance | Deterministic (seed data, no registration UI) |
+| "What do I take now?" query | Voice query resolved against the seeded schedule for the current demo time slot | AI (parsing) + Deterministic |
+| Camera-based verification | Match scanned package against the one expected item, using OCR text match and/or barcode against the 3 known references | Computer Vision |
+| Three-state confidence output | Match / Mismatch / Uncertain, exposed explicitly | Deterministic |
+| Voice output (ElevenLabs) | Speaks the schedule query answer and the verification result, one voice preset per state | Voice |
+| Instruction read-aloud | Reads the stored instruction text for the matched medication | Voice (reads stored text only, no generation) |
+| Mark as taken | Enabled only after a confirmed match | Deterministic |
+| Minimal accessible UI | Large text, high contrast — enough to read on a demo screen, not full WCAG compliance | Flutter |
+
+### 5.2 Cut from the hackathon build (and why)
+
+| Feature | Why it's cut for the 6-hour build |
+|---|---|
+| Medication registration UI | Seeding 3 medications directly is faster and just as demoable; a registration flow adds UI work with no payoff for a live demo |
+| Bilingual (PT/EN) support | Doubles voice-preset and UI work for no demo value; pick one language for the hackathon, mention the other as immediate roadmap |
+| Medication history log UI | Logging the event to the database is enough; a full history screen is a second feature, not core to proving the mechanic |
+| Family/caregiver sharing | Requires a permission and consent model that doesn't exist yet — explicitly a later stage, not a corner that can be cut down |
+| Multi-medication detection in one frame | Harder CV problem than closed-set single-item match; out of scope at any stage before real validation |
+| Full screen-reader support | Real accessibility work takes longer than a hackathon allows to do properly; doing it badly is worse than stating it's next |
+| Prescription scanning / auto-registration | OCR-from-prescription accuracy risk is a real product problem, not a hackathon one |
+| Offline mode | Adds infrastructure complexity with zero demo value |
+
+### 5.3 Roadmap Features (post-hackathon, pre-institutional)
+
+| Feature | Description | Notes |
+|---|---|---|
+| Full medication registration flow | User-driven add/edit of medications, schedules, reference images | First thing built after the hackathon |
+| Bilingual support (PT/EN) | Interface and voice output in Portuguese and English | |
+| Medication history log | Full taken/mismatched/uncertain history with timestamps, viewable by the user | |
+| Family/caregiver sharing with consent | Permissioned visibility into missed/mismatched events for a supported person | Requires a real consent model |
+| Full accessibility pass | WCAG-aligned contrast, screen-reader support end to end | Required before this is usable by the low-vision users it's meant for |
+| Institutional dashboard | Per-staff, per-client mismatch/incident reporting | Built once the individual product is validated, not before |
+
+### 5.4 Explicitly Out of Scope (any version, any stage)
+
+- Diagnosing disease or conditions
+- Prescribing or recommending starting/stopping any medication
+- Modifying, inventing, or altering dosage or medically relevant instructions
+- Guaranteeing identification of unlabeled/loose pills
+- Advanced open-set pill identification beyond packaged items — unreliable and carries real regulatory risk
+- Replacing a doctor or pharmacist
+
+---
+
+## 6. System Architecture
+
+### 6.1 Layer Separation (non-negotiable safety boundary)
+
+```
+┌─────────────────────────────────────────────┐
+│  Deterministic Safety Layer (source of truth)│
+│  - Medication list & schedule                │
+│  - Verified dosage/instructions              │
+│  - Matching logic & confidence thresholds    │
+│  - Permissions & history                     │
+│  - Escalation rules (never overridden by AI) │
+└─────────────────────────────────────────────┘
+              ▲                    ▲
+              │                    │
+┌─────────────────────┐  ┌─────────────────────┐
+│   AI / LLM Layer     │  │  Computer Vision     │
+│  - NL request parsing│  │  - Closed-set match  │
+│  - Instruction        │  │    of scanned item   │
+│    read-aloud only    │  │    vs. expected item │
+│    (never invents/    │  │  - OCR / barcode      │
+│    alters content)    │  │  - Returns match/     │
+│  - Orchestrates calls │  │    mismatch/uncertain │
+│    to deterministic   │  │    only               │
+│    layer               │  └─────────────────────┘
+└─────────────────────┘
+              │
+              ▼
+┌─────────────────────────────────────────────┐
+│         Voice Layer (ElevenLabs)             │
+│  Renders deterministic layer's output as     │
+│  speech only. Tone preset selected by safety │
+│  state (confirm / mismatch / uncertain).     │
+│  Never makes or alters a safety decision.    │
+└─────────────────────────────────────────────┘
+```
+
+**Hard rule:** the AI and voice layers can only *render and orchestrate*. Only the deterministic layer decides confirmed / mismatch / uncertain, and only the deterministic layer can permit a "mark as taken" action. This rule is also the answer to the most likely judge question about safety — lead with it if asked how you prevent the AI from "hallucinating" a match.
+
+### 6.2 Component Responsibilities
+
+- **Flutter (client):** UI, camera capture, local state, calls to Supabase and AI/voice services. Accessibility hooks (screen reader, large text/contrast) are stubbed for the hackathon and built out fully in Section 5.3.
+- **Supabase:** auth, Postgres database (medications, schedules, history, permissions), storage for reference package images.
+- **AI API (LLM):** natural-language request parsing ("what do I take now" → structured query), instruction read-aloud rendering, conversational orchestration. Constrained: cannot write to medication/dosage records.
+- **Computer vision / OCR:** closed-set verification of a scanned package against one expected reference (stored image/barcode/OCR text), returns one of three states; no open-set identification, ever.
+- **ElevenLabs:** text-to-speech rendering of deterministic-layer output; distinct voice/tone presets for confirm, mismatch, and uncertain states.
+- **Deterministic safety engine (application logic, not an AI model):** schedule resolution, matching decision, thresholds, permissions, history logging, escalation rules.
+
+---
+
+## 7. Integrations
+
+| Integration | Purpose | Notes |
+|---|---|---|
+| ElevenLabs | Text-to-speech for all spoken output | Tone/voice preset varies by safety state, never by content the AI generates freely |
+| LLM API (Claude/OpenAI-class model) | NL understanding, instruction read-aloud, orchestration | Constrained: cannot write to medication/dosage records |
+| OCR / barcode recognition | Reads package text/codes for matching | Off-the-shelf OCR + barcode libraries; no custom model training for the hackathon build |
+| Computer vision matching | Confirms/rejects scanned package against one expected reference | Closed-set only |
+| Supabase Auth | User accounts; family/caregiver permissioning (roadmap) | Single hardcoded user for the hackathon build |
+| Supabase Postgres + Storage | Medication data, schedules, history, reference images | Source-of-truth database |
+| Screen reader APIs (iOS/Android via Flutter) | Native accessibility support | Roadmap — required before real deployment to blind/low-vision users, not built for the hackathon |
+
+**Roadmap integrations (not MVP, not near-term):** pharmacy dispensing systems, national e-medication formats relevant to EU markets, care-agency incident/reporting systems, insurer data-sharing pipelines. None of these are built or assumed working before real institutional pilots and legal review.
+
+---
+
+## 8. Data Model (high level — full product schema; hackathon build seeds this directly rather than building CRUD for it)
+
+- **User** — id, role (individual / family caregiver / professional staff), locale (PT/EN), accessibility preferences
+- **Medication** — id, owner_user_id, name, dosage, instructions (verified source text), meal timing, notes
+- **Schedule** — id, medication_id, time slots, recurrence
+- **ReferenceImage/Code** — id, medication_id, stored image and/or barcode/OCR text used for matching
+- **VerificationEvent** — id, medication_id, timestamp, result (match/mismatch/uncertain), confidence score
+- **MedicationHistory** — id, medication_id, timestamp, action (taken/skipped), verification_event_id
+- **Permission** (roadmap) — grantor_user_id, grantee_user_id, scope (e.g., view missed/mismatch events only)
+
+---
+
+## 9. Non-Functional Requirements
+
+- **Safety:** system must never present an uncertain result as a match; default behavior on any doubt is to say so.
+- **Accessibility:** full WCAG-aligned contrast, touch-target sizing, and screen-reader compatibility are required before real deployment — explicitly not claimed for the hackathon build, which only needs to be legible on a demo screen.
+- **Localization:** Portuguese and English at launch (post-hackathon); hackathon build uses one language.
+- **Latency:** verification response (camera scan → spoken result) should feel immediate in-demo; target well under a few seconds for the closed-set match.
+- **Privacy:** medication and health data stored per-user with strict access control; family/caregiver visibility only via explicit, revocable permission (roadmap, not MVP).
+
+---
+
+## 10. Regulatory & Compliance Notes (not legal advice)
+
+**This is a Class IIa medical device candidate, and the product strategy is built around that reality rather than around avoiding it.** Under EU MDR Annex VIII, Rule 11, software intended to provide information used to make a diagnostic or therapeutic decision defaults to Class IIa unless the potential consequence of that decision pushes it higher. Telling someone "take this medication now" is a therapeutic decision. There is no defensible "logistics confirmation" framing that keeps this outside MDR scope once it's making real recommendations to real patients — attempting that framing would not survive scrutiny from a notified body, an investor's legal counsel, or a competent journalist, and claiming it publicly would actively damage credibility with any serious accelerator or healthtech reviewer.
+
+The staged path this document commits to instead:
+
+- **Stage 0 — Hackathon prototype (now):** No real patient data, no real clinical claims made publicly, explicitly demoed and described as a prototype. This stage carries no MDR obligation because it is not placed on the market or used with real patients.
+- **Stage 1 — Informal pilot:** Any use with real people's real medication requires informed consent, framing as a research/beta tool, and explicit disclosure that it is not a certified medical device and should not be relied on as a sole safety check. No claims of clinical validation are made at this stage, consistent with the product's own principle of never overstating certainty.
+- **Stage 2 — Path to CE marking:** Before any deployment marketed as a safety tool to real patients or sold to a care facility as a liability-reducing product, Certo pursues Class IIa CE marking: a notified body, a technical file, a clinical evaluation, and a quality management system. This is 12–18 months of real regulatory work, budgeted and planned for, not skipped.
+
+Additional notes:
+- GDPR (and Portuguese data protection law) applies to any stored health-adjacent data; the production version needs a data processing assessment before handling real patient data, at or before Stage 1.
+- The three-state confidence output (match/mismatch/uncertain) is itself part of the safety case for eventual certification — a system that explicitly refuses to guess is easier to justify to a notified body than one that always returns a confident answer.
+
+---
+
+## 11. Success Metrics (post-hackathon validation)
+
+- Verification accuracy: false-positive rate (system says match when it's actually a mismatch) must be effectively zero in testing; false "uncertain" is acceptable, false "match" is not.
+- Time-to-verify per interaction.
+- Verification events per active user per week — the concrete, trackable version of "daily habit," used from the first pilot onward instead of a vague adoption claim.
+- Family/caregiver users (once built): reported confidence that a loved one's medication was taken correctly.
+- Professional/institutional pilots (once built): reduction in reported medication mismatch incidents per shift/staff member.
+- User-reported trust in the system's uncertainty communication (does "I don't know" read as helpful, not broken).
+
+---
+
+## 12. Business Model Summary
+
+- **Primary product:** free or low-cost self-serve tier for individuals and family caregivers — this is where the core experience gets proven and where most users will actually live. Direct consumer payment for health apps is weak in the Portuguese/EU market absent reimbursement, so this tier is about proving the mechanic and building trust, not primary revenue.
+- **Business wedge:** home-care agencies and small elder-care facilities (B2B license per caregiver/facility), sold on top of a product individuals already trust, and only pursued once Stage 2 regulatory work (Section 10) is underway or complete — this is a liability-sensitive buyer and will not adopt a non-certified tool at scale.
+- **Long-term:** pharmacy and insurer partnerships once safety data accumulates and CE marking is in place; not assumed or built into the MVP or the pilot stage.
+
+---
+
+## 13. Open Questions
+
+- What's the minimum reference data (photos/barcodes) needed per medication to make closed-set matching reliable across common Portuguese pharmacy packaging at scale, beyond the 3 seeded items in the demo?
+- What's the right escalation path when "uncertain" occurs repeatedly for the same medication (packaging wear, lighting, etc.)?
+- What consent/permission model is appropriate for family and professional caregiver visibility, and does it differ between the two?
+- What is the realistic budget and timeline for Stage 2 CE marking, and what's the minimum pilot evidence needed to make that investment case to an accelerator or early investor?
+- What would make an individual user trust and stick with a daily verification habit, independent of whether anyone else ever sees their data?
+
+---
+
+## Appendix: Hackathon Demo Seed Dataset
+
+Use this directly — seed it into Supabase before the event rather than building a registration flow.
+
+### Seeded medications (3)
+
+| Field | Medication 1 | Medication 2 (used for the mismatch demo) | Medication 3 |
+|---|---|---|---|
+| Name | Amoxicillina 500mg | Loratadina 10mg | Paracetamol 1000mg |
+| Dosage/instructions | 1 capsule, after food, every 8h | 1 tablet, once daily | 1 tablet, up to every 6h if needed |
+| Scheduled time (demo) | Set to "now" for the live demo | Not currently due — this is the box shown for the mismatch beat | Not currently due |
+| Reference data | Photo of box (front label) + OCR text of the product name; barcode if the package has one | Same | Same |
+| Visual note | Pick a real look-alike pairing if possible (similar box color/size to Medication 2) — this makes the mismatch demo more convincing than two obviously different boxes | | |
+
+### Reference image capture checklist (do this the day before)
+- Photograph each box straight-on, good lighting, plain background, same distance as the phone will realistically be held during the demo.
+- Capture the barcode separately if present, and confirm OCR correctly reads the product name from the front label.
+- Test the match against a slightly different angle/lighting than the reference photo, since the live demo won't be pixel-identical to the seed image.
+
+### Voice line presets (write these out in advance for ElevenLabs)
+
+**Match:**
+> "This is your [medication name]. It matches what's scheduled for now. [Read instruction text]."
+
+**Mismatch:**
+> "This doesn't match. You're scheduled for [expected medication], not [scanned item name if identifiable, otherwise 'this']."
+
+**Uncertain:**
+> "I'm not sure this matches. Try holding it a bit closer, or check with someone else before taking it."
+
+**Schedule query response:**
+> "You need to take your [medication name] now."
+
+Keep the tone flat and calm across all three states — no exclamation points, no urgency-signaling language even in the mismatch case. Panic-coded delivery undermines the "never guess, stay calm" principle the whole product is built on, and it's a detail judges who read the room will notice.
