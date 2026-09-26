@@ -52,7 +52,7 @@ class AlarmService {
       final info = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(info.identifier));
     } catch (e) {
-      debugPrint('Certo: timezone lookup failed — $e');
+      debugPrint('Verifi: timezone lookup failed — $e');
     }
 
     const settings = InitializationSettings(
@@ -79,7 +79,7 @@ class AlarmService {
     try {
       _launchDetails = await _plugin.getNotificationAppLaunchDetails();
     } catch (e) {
-      debugPrint('Certo: launch-details lookup failed — $e');
+      debugPrint('Verifi: launch-details lookup failed — $e');
     }
   }
 

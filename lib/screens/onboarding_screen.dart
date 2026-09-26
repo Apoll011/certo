@@ -3,8 +3,6 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
-import '../widgets/gradient_orb.dart';
-import '../widgets/pill_icon.dart';
 import '../widgets/primary_button.dart';
 import 'main_shell.dart';
 
@@ -31,19 +29,12 @@ class OnboardingScreen extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      GradientOrb(
-                        size: 224,
-                        blur: 56,
-                        spread: 16,
-                        child: const Center(
-                          child: PillIcon(
-                            size: 180,
-                            color1: Colors.white,
-                            color2: Color(0xFFE6E9F7),
-                          ),
-                        ),
+                      Image.asset(
+                        'assets/wordmark.png',
+                        width: 260,
+                        fit: BoxFit.contain,
                       ),
-                      const SizedBox(height: 44),
+                      const SizedBox(height: 48),
                       Text(
                         l10n.onboardingHeadline,
                         textAlign: TextAlign.center,

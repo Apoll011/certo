@@ -1,4 +1,4 @@
-# Certo
+# Verifi
 
 A calm, voice-and-camera-first medication reminder app. Flutter client backed by
 Supabase (Auth + Postgres + Row Level Security), built from `idea.md`.
@@ -143,5 +143,7 @@ flutter run --dart-define-from-file=.env
 
 ## Design tokens
 
-Colors and typography live in `lib/theme/`. The medication "pill" avatar and
-the AI "gradient orb" are reusable widgets in `lib/widgets/`.
+Colors and typography live in `lib/theme/`. The brand palette is defined in
+`assets/color_pallete.txt` (navy `#13005A`, blue `#00337C`, cyan `#1C82AD`,
+green `#03C988`). The medication "pill" avatar and the AI "gradient orb" are
+reusable widgets in `lib/widgets/`.

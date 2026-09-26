@@ -1,11 +1,11 @@
 {
-    "name": "Certo",
-    "short_name": "Certo",
+    "name": "Verifi",
+    "short_name": "Verifi",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#F5F5FA",
-    "theme_color": "#4A5FEB",
-    "description": "Certo — a calm, voice-and-camera-first medication reminder.",
+    "background_color": "#F3F6FB",
+    "theme_color": "#00337C",
+    "description": "Verifi — a calm, voice-and-camera-first medication reminder.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

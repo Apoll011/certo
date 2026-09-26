@@ -169,7 +169,7 @@ class AppState extends ChangeNotifier {
         ..clear()
         ..addAll(meds ?? const []);
     } catch (e) {
-      debugPrint('Certo: failed to load data — $e');
+      debugPrint('Verifi: failed to load data — $e');
     }
   }
 
@@ -186,7 +186,7 @@ class AppState extends ChangeNotifier {
     try {
       await AlarmService.syncMedications(medications);
     } catch (e) {
-      debugPrint('Certo: alarm sync failed — $e');
+      debugPrint('Verifi: alarm sync failed — $e');
     }
   }
 
@@ -231,7 +231,7 @@ class AppState extends ChangeNotifier {
     try {
       await SupabaseService.client.auth.signOut();
     } catch (e) {
-      debugPrint('Certo: sign out failed — $e');
+      debugPrint('Verifi: sign out failed — $e');
     }
     // Auth listener also handles this; do it defensively in case it hasn't.
     _onSignedOut();
@@ -264,7 +264,7 @@ class AppState extends ChangeNotifier {
       try {
         await repo.updateName(uid, trimmed);
       } catch (e) {
-        debugPrint('Certo: update profile name failed — $e');
+        debugPrint('Verifi: update profile name failed — $e');
       }
     }
     notifyListeners();
@@ -284,7 +284,7 @@ class AppState extends ChangeNotifier {
         await _syncAlarms();
         return created;
       } catch (e) {
-        debugPrint('Certo: create medication failed — $e');
+        debugPrint('Verifi: create medication failed — $e');
       }
     }
     medications.insert(0, m);
@@ -304,7 +304,7 @@ class AppState extends ChangeNotifier {
         await _syncAlarms();
         return;
       } catch (e) {
-        debugPrint('Certo: update medication failed — $e');
+        debugPrint('Verifi: update medication failed — $e');
       }
     }
     final i = medications.indexWhere((x) => x.id == m.id);
@@ -334,7 +334,7 @@ class AppState extends ChangeNotifier {
       try {
         await repo.delete(id);
       } catch (e) {
-        debugPrint('Certo: delete medication failed — $e');
+        debugPrint('Verifi: delete medication failed — $e');
       }
     }
     medications.removeWhere((m) => m.id == id);
@@ -360,7 +360,7 @@ class AppState extends ChangeNotifier {
     try {
       await AlarmService.snooze(med, med.times.first, minutes);
     } catch (e) {
-      debugPrint('Certo: snooze schedule failed — $e');
+      debugPrint('Verifi: snooze schedule failed — $e');
     }
   }
 
@@ -394,7 +394,7 @@ class AppState extends ChangeNotifier {
         'action': action,
       });
     } catch (e) {
-      debugPrint('Certo: record dose failed — $e');
+      debugPrint('Verifi: record dose failed — $e');
     }
   }
 

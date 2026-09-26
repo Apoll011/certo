@@ -10,7 +10,7 @@ void main() {
   testWidgets('Onboarding renders headline and CTA', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const CertoApp());
+    await tester.pumpWidget(const VerifiApp());
 
     expect(find.textContaining('Your medication'), findsOneWidget);
     expect(find.text('Get started'), findsOneWidget);

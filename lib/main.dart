@@ -16,11 +16,11 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseService.initialize();
   await AlarmService.init();
-  runApp(const CertoApp());
+  runApp(const VerifiApp());
 }
 
-class CertoApp extends StatelessWidget {
-  const CertoApp({super.key});
+class VerifiApp extends StatelessWidget {
+  const VerifiApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +28,7 @@ class CertoApp extends StatelessWidget {
       create: (_) => AppState(),
       child: Consumer<AppState>(
         builder: (context, state, _) => MaterialApp(
-          title: 'Certo',
+          title: 'Verifi',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(),
           locale: state.localeOverride,
@@ -69,7 +69,7 @@ class _RootState extends State<_Root> {
     try {
       await _state.bootstrap();
     } catch (e) {
-      debugPrint('Certo: bootstrap failed — $e');
+      debugPrint('Verifi: bootstrap failed — $e');
     }
     if (!mounted) return;
     _maybeOpenInitialAlarm();
@@ -136,9 +136,18 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       backgroundColor: AppColors.background,
-      body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('assets/icon.png', width: 96, height: 96),
+            const SizedBox(height: 32),
+            const CircularProgressIndicator(color: AppColors.primary),
+          ],
+        ),
+      ),
     );
   }
 }

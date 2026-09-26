@@ -111,7 +111,7 @@
   "authConfirmationSent": "Check your email to confirm your account.",
   "authFillAll": "Please enter your email and password.",
   "signOut": "Sign out",
-  "signOutConfirm": "Sign out of Certo?",
+  "signOutConfirm": "Sign out of Verifi?",
   "cancel": "Cancel",
 
   "profile": "Profile",
@@ -123,7 +123,7 @@
   "notificationsComingSoon": "Notification settings are coming soon",
   "account": "Account",
   "about": "About",
-  "aboutBody": "Certo — medication reminders made simple.",
+  "aboutBody": "Verifi — medication reminders made simple.",
   "editName": "Edit name",
   "save": "Save",
   "nameSaved": "Name saved ✓",

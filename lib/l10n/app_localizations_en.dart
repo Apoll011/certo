@@ -238,7 +238,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signOut => 'Sign out';
 
   @override
-  String get signOutConfirm => 'Sign out of Certo?';
+  String get signOutConfirm => 'Sign out of Verifi?';
 
   @override
   String get cancel => 'Cancel';
@@ -271,7 +271,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get about => 'About';
 
   @override
-  String get aboutBody => 'Certo — medication reminders made simple.';
+  String get aboutBody => 'Verifi — medication reminders made simple.';
 
   @override
   String get editName => 'Edit name';

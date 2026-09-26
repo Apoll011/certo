@@ -55,7 +55,7 @@ class _AlarmScreenState extends State<AlarmScreen>
       await _audio.setReleaseMode(ReleaseMode.loop);
       await _audio.play(AssetSource('audio/alarm.wav'));
     } catch (e) {
-      debugPrint('Certo: alarm sound failed — $e');
+      debugPrint('Verifi: alarm sound failed — $e');
     }
   }
 

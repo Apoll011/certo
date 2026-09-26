@@ -1,5 +1,5 @@
 name: medication_reminder
-description: "Certo — a calm, voice-and-camera-first medication reminder."
+description: "Verifi — a calm, voice-and-camera-first medication reminder."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -71,6 +71,9 @@ flutter:
 
   assets:
     - assets/audio/alarm.wav
+    - assets/icon.png
+    - assets/wordmark.png
+    - assets/wordmark2.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

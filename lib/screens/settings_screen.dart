@@ -203,7 +203,7 @@ class SettingsScreen extends StatelessWidget {
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.primary, Color(0xFF6C7BFF)],
+          colors: [AppColors.primary, AppColors.secondary],
         ),
       ),
       alignment: Alignment.center,

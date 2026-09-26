@@ -81,7 +81,7 @@
   "authConfirmationSent": "Verifique seu e-mail para confirmar sua conta.",
   "authFillAll": "Informe seu e-mail e senha.",
   "signOut": "Sair",
-  "signOutConfirm": "Sair do Certo?",
+  "signOutConfirm": "Sair do Verifi?",
   "cancel": "Cancelar",
 
   "profile": "Perfil",
@@ -93,7 +93,7 @@
   "notificationsComingSoon": "Configurações de notificações em breve",
   "account": "Conta",
   "about": "Sobre",
-  "aboutBody": "Certo — lembretes de medicamentos descomplicados.",
+  "aboutBody": "Verifi — lembretes de medicamentos descomplicados.",
   "editName": "Editar nome",
   "save": "Salvar",
   "nameSaved": "Nome salvo ✓",

@@ -515,7 +515,7 @@ abstract class AppLocalizations {
   /// No description provided for @signOutConfirm.
   ///
   /// In en, this message translates to:
-  /// **'Sign out of Certo?'**
+  /// **'Sign out of Verifi?'**
   String get signOutConfirm;
 
   /// No description provided for @cancel.
@@ -581,7 +581,7 @@ abstract class AppLocalizations {
   /// No description provided for @aboutBody.
   ///
   /// In en, this message translates to:
-  /// **'Certo — medication reminders made simple.'**
+  /// **'Verifi — medication reminders made simple.'**
   String get aboutBody;
 
   /// No description provided for @editName.

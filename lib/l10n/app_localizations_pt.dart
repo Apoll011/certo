@@ -238,7 +238,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get signOut => 'Sair';
 
   @override
-  String get signOutConfirm => 'Sair do Certo?';
+  String get signOutConfirm => 'Sair do Verifi?';
 
   @override
   String get cancel => 'Cancelar';
@@ -272,7 +272,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get about => 'Sobre';
 
   @override
-  String get aboutBody => 'Certo — lembretes de medicamentos descomplicados.';
+  String get aboutBody => 'Verifi — lembretes de medicamentos descomplicados.';
 
   @override
   String get editName => 'Editar nome';

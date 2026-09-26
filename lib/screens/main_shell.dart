@@ -36,7 +36,7 @@ class MainShell extends StatelessWidget {
                   ],
                 ),
               ),
-              CertoBottomNavBar(
+              VerifiBottomNavBar(
                 selectedIndex: state.selectedTabIndex,
                 onTabChanged: (i) => state.setTab(i),
                 onMicTap: () => showComingSoon(context, l10n.voiceComingSoon),

@@ -36,7 +36,7 @@ class GradientOrb extends StatelessWidget {
             spreadRadius: spread,
           ),
           BoxShadow(
-            color: const Color(0xFF6EE7C8).withValues(alpha: 0.32),
+            color: AppColors.success.withValues(alpha: 0.32),
             blurRadius: blur * 0.6,
             spreadRadius: 0,
           ),

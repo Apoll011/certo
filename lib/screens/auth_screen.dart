@@ -72,7 +72,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         child: PillIcon(
                           size: 52,
                           color1: Colors.white,
-                          color2: Color(0xFFE6E9F7),
+                          color2: Color(0xFFE2EBF7),
                         ),
                       ),
                     ),

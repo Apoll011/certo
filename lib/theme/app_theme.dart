@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 
-/// Theme and shared text styles for Certo.
+/// Theme and shared text styles for Verifi.
 class AppTheme {
   AppTheme._();
 

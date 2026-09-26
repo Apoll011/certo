@@ -5,9 +5,9 @@ import '../theme/app_colors.dart';
 
 /// Bottom tab bar: Home · Meds · [mic FAB] · Schedule · Caregiver.
 ///
-/// The mic FAB is an oversized elevated indigo circle in the center.
-class CertoBottomNavBar extends StatelessWidget {
-  const CertoBottomNavBar({
+/// The mic FAB is an oversized elevated blue circle in the center.
+class VerifiBottomNavBar extends StatelessWidget {
+  const VerifiBottomNavBar({
     super.key,
     required this.selectedIndex,
     required this.onTabChanged,
@@ -160,7 +160,7 @@ class _MicFab extends StatelessWidget {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [AppColors.primary, Color(0xFF6C7BFF)],
+              colors: [AppColors.primary, AppColors.secondary],
             ),
             boxShadow: [
               BoxShadow(
