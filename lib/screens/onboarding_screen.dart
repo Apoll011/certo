@@ -10,7 +10,10 @@ import 'main_shell.dart';
 
 /// First-launch welcome / value-prop screen.
 class OnboardingScreen extends StatelessWidget {
-  const OnboardingScreen({super.key});
+  const OnboardingScreen({super.key, this.onGetStarted});
+
+  /// Where "Get started" leads; defaults to the main shell (demo mode).
+  final VoidCallback? onGetStarted;
 
   @override
   Widget build(BuildContext context) {
@@ -65,9 +68,11 @@ class OnboardingScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: PrimaryButton(
                 label: l10n.getStarted,
-                onPressed: () => Navigator.of(context).pushReplacement(
-                  MaterialPageRoute(builder: (_) => const MainShell()),
-                ),
+                onPressed:
+                    onGetStarted ??
+                    () => Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(builder: (_) => const MainShell()),
+                    ),
               ),
             ),
             const SizedBox(height: 12),

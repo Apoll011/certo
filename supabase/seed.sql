@@ -1,0 +1,22 @@
+-- Certo — optional demo seed.
+--
+-- This is DEVELOPMENT-ONLY sample data. It is intentionally separate from the
+-- schema migrations and is never inserted by the Flutter app at runtime.
+--
+-- The Flutter client already ships mock data as an offline/demo fallback, so
+-- seeding the database is optional. If you want a logged-in demo user to see
+-- data immediately, replace `<USER_ID>` below with the UUID of an auth user you
+-- create (sign up in the app, or via Dashboard → Authentication → Users) and
+-- run:  supabase db reset   (applies migrations + this seed).
+--
+-- Keep the production database free of demo rows.
+
+-- insert into public.medications
+--   (user_id, name, dosage, instruction, category, notes, times, pill_color_index, status, started_at)
+-- values
+--   ('<USER_ID>', 'Amoxicillin 500mg', '1 tablet', 'After meal',
+--    'Antibiotic · Oral tablet', 'Finish the full course.',
+--    array['9:00 AM', '1:00 PM', '9:00 PM'], 0, 'active', current_date),
+--   ('<USER_ID>', 'Metformin 850mg', '1 tablet', 'With breakfast',
+--    'Diabetes · Oral tablet', 'Check your blood sugar before taking.',
+--    array['8:00 AM', '8:00 PM'], 1, 'active', current_date);

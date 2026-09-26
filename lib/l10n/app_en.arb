@@ -93,5 +93,24 @@
     "placeholders": {
       "count": { "type": "int" }
     }
-  }
+  },
+
+  "authWelcome": "Welcome back",
+  "authCreateAccount": "Create your account",
+  "authSubtitle": "Sign in to see your medications.",
+  "emailLabel": "Email",
+  "emailHint": "you@example.com",
+  "passwordLabel": "Password",
+  "passwordHint": "Your password",
+  "nameLabel": "Name",
+  "nameHint": "Your name",
+  "signIn": "Sign in",
+  "signUp": "Create account",
+  "noAccount": "Don't have an account? Sign up",
+  "haveAccount": "Already have an account? Sign in",
+  "authConfirmationSent": "Check your email to confirm your account.",
+  "authFillAll": "Please enter your email and password.",
+  "signOut": "Sign out",
+  "signOutConfirm": "Sign out of Certo?",
+  "cancel": "Cancel"
 }

@@ -53,20 +53,26 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              CircleIconButton(
-                icon: Icons.settings_outlined,
-                onTap: () => showComingSoon(context, l10n.settings),
-              ),
+              if (state.isAuthenticated)
+                CircleIconButton(
+                  icon: Icons.logout_rounded,
+                  onTap: () => _confirmSignOut(context),
+                )
+              else
+                CircleIconButton(
+                  icon: Icons.settings_outlined,
+                  onTap: () => showComingSoon(context, l10n.settings),
+                ),
             ],
           ),
           const SizedBox(height: 20),
           AppCard(
             onTap: next != null
                 ? () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => AlarmScreen(medication: next),
-                      ),
-                    )
+                    MaterialPageRoute(
+                      builder: (_) => AlarmScreen(medication: next),
+                    ),
+                  )
                 : null,
             color: AppColors.primary,
             child: Row(
@@ -131,5 +137,30 @@ class HomeScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _confirmSignOut(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
+    final state = context.read<AppState>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.signOut),
+        content: Text(l10n.signOutConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text(l10n.signOut),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await state.signOut();
+    }
   }
 }

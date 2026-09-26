@@ -187,4 +187,59 @@ class AppLocalizationsPt extends AppLocalizations {
   String addedDaysAgo(int count) {
     return 'Adicionado há $count dias';
   }
+
+  @override
+  String get authWelcome => 'Bem-vindo de volta';
+
+  @override
+  String get authCreateAccount => 'Crie sua conta';
+
+  @override
+  String get authSubtitle => 'Entre para ver seus medicamentos.';
+
+  @override
+  String get emailLabel => 'E-mail';
+
+  @override
+  String get emailHint => 'voce@exemplo.com';
+
+  @override
+  String get passwordLabel => 'Senha';
+
+  @override
+  String get passwordHint => 'Sua senha';
+
+  @override
+  String get nameLabel => 'Nome';
+
+  @override
+  String get nameHint => 'Seu nome';
+
+  @override
+  String get signIn => 'Entrar';
+
+  @override
+  String get signUp => 'Criar conta';
+
+  @override
+  String get noAccount => 'Não tem conta? Cadastre-se';
+
+  @override
+  String get haveAccount => 'Já tem conta? Entre';
+
+  @override
+  String get authConfirmationSent =>
+      'Verifique seu e-mail para confirmar sua conta.';
+
+  @override
+  String get authFillAll => 'Informe seu e-mail e senha.';
+
+  @override
+  String get signOut => 'Sair';
+
+  @override
+  String get signOutConfirm => 'Sair do Certo?';
+
+  @override
+  String get cancel => 'Cancelar';
 }

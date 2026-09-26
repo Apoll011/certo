@@ -63,5 +63,24 @@
 
   "addedToday": "Adicionado hoje",
   "addedYesterday": "Adicionado ontem",
-  "addedDaysAgo": "Adicionado há {count} dias"
+  "addedDaysAgo": "Adicionado há {count} dias",
+
+  "authWelcome": "Bem-vindo de volta",
+  "authCreateAccount": "Crie sua conta",
+  "authSubtitle": "Entre para ver seus medicamentos.",
+  "emailLabel": "E-mail",
+  "emailHint": "voce@exemplo.com",
+  "passwordLabel": "Senha",
+  "passwordHint": "Sua senha",
+  "nameLabel": "Nome",
+  "nameHint": "Seu nome",
+  "signIn": "Entrar",
+  "signUp": "Criar conta",
+  "noAccount": "Não tem conta? Cadastre-se",
+  "haveAccount": "Já tem conta? Entre",
+  "authConfirmationSent": "Verifique seu e-mail para confirmar sua conta.",
+  "authFillAll": "Informe seu e-mail e senha.",
+  "signOut": "Sair",
+  "signOutConfirm": "Sair do Certo?",
+  "cancel": "Cancelar"
 }

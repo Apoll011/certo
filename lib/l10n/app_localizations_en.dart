@@ -187,4 +187,59 @@ class AppLocalizationsEn extends AppLocalizations {
   String addedDaysAgo(int count) {
     return 'Added $count days ago';
   }
+
+  @override
+  String get authWelcome => 'Welcome back';
+
+  @override
+  String get authCreateAccount => 'Create your account';
+
+  @override
+  String get authSubtitle => 'Sign in to see your medications.';
+
+  @override
+  String get emailLabel => 'Email';
+
+  @override
+  String get emailHint => 'you@example.com';
+
+  @override
+  String get passwordLabel => 'Password';
+
+  @override
+  String get passwordHint => 'Your password';
+
+  @override
+  String get nameLabel => 'Name';
+
+  @override
+  String get nameHint => 'Your name';
+
+  @override
+  String get signIn => 'Sign in';
+
+  @override
+  String get signUp => 'Create account';
+
+  @override
+  String get noAccount => 'Don\'t have an account? Sign up';
+
+  @override
+  String get haveAccount => 'Already have an account? Sign in';
+
+  @override
+  String get authConfirmationSent =>
+      'Check your email to confirm your account.';
+
+  @override
+  String get authFillAll => 'Please enter your email and password.';
+
+  @override
+  String get signOut => 'Sign out';
+
+  @override
+  String get signOutConfirm => 'Sign out of Certo?';
+
+  @override
+  String get cancel => 'Cancel';
 }
