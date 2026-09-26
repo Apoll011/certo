@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme/app_colors.dart';
-import '../utils/ui.dart';
 import '../widgets/bottom_nav_bar.dart';
 import 'caregiver_screen.dart';
 import 'home_screen.dart';
 import 'medications_screen.dart';
 import 'schedule_screen.dart';
+import 'voice_mode_sheet.dart';
 
 /// Scaffold hosting the four tabs and the center mic FAB.
 class MainShell extends StatelessWidget {
@@ -19,8 +18,6 @@ class MainShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AppState>(
       builder: (context, state, _) {
-        final l10n = AppLocalizations.of(context)!;
-
         return Scaffold(
           backgroundColor: AppColors.background,
           body: Column(
@@ -39,7 +36,7 @@ class MainShell extends StatelessWidget {
               VerifiBottomNavBar(
                 selectedIndex: state.selectedTabIndex,
                 onTabChanged: (i) => state.setTab(i),
-                onMicTap: () => showComingSoon(context, l10n.voiceComingSoon),
+                onMicTap: () => showVoiceMode(context),
               ),
             ],
           ),

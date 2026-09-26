@@ -6,7 +6,8 @@
 ///
 /// Usage:
 ///   flutter run --dart-define=SUPABASE_URL=https://xyz.supabase.co \
-///               --dart-define=SUPABASE_ANON_KEY=eyJ...
+///               --dart-define=SUPABASE_ANON_KEY=eyJ... \
+///               --dart-define=ELEVENLABS_API_KEY=sk_...
 class AppConfig {
   AppConfig._();
 
@@ -14,4 +15,23 @@ class AppConfig {
   static const String supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
   );
+
+  // ── ElevenLabs ────────────────────────────────────────────────────────────
+  /// ElevenLabs API key (publishable). Pass via --dart-define=ELEVENLABS_API_KEY=...
+  static const String elevenLabsApiKey = String.fromEnvironment(
+    'ELEVENLABS_API_KEY',
+  );
+
+  /// Voice ID for TTS. Defaults to "Rachel" (a natural, warm voice).
+  /// Override via --dart-define=ELEVENLABS_VOICE_ID=...
+  static const String elevenLabsVoiceId = String.fromEnvironment(
+    'ELEVENLABS_VOICE_ID',
+    defaultValue: 'cgSgspJ2msm6clMCkdW9', // Jessica — conversational
+  );
+
+  /// ElevenLabs TTS model: "eleven_v3" = Conversacional v3.
+  static const String elevenLabsTtsModel = 'eleven_v3';
+
+  /// ElevenLabs STT model: Scribe v2 Realtime.
+  static const String elevenLabsSttModel = 'scribe_v2_realtime';
 }

@@ -45,6 +45,9 @@ dependencies:
   flutter_timezone: ^5.1.0
   audioplayers: ^6.8.1
   wakelock_plus: ^1.8.0
+  record: ^7.1.1
+  web_socket_channel: ^3.0.3
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
