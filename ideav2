@@ -1,4 +1,4 @@
-# Certo — Product Requirements Document
+# Verifi — Product Requirements Document
 
 **Tagline:** The safety check between "it's time" and "it's in your hand."
 
@@ -10,22 +10,22 @@
 
 ## Executive Summary
 
-Certo is a voice-first safety check that verifies the specific medication someone is about to take actually matches what their schedule expects, at the exact moment they're holding it — closing a gap that reminder apps like Medisafe and MyTherapy don't touch, since those tools tell you *when* to take something but never check *what's in your hand*. It's built first for individuals managing their own medication — especially the 1 in 4 Portuguese seniors who live alone — with a professional caregiver tier as the path to revenue. Look-alike/sound-alike medication confusion alone is estimated to cause 6–15% of all medication errors, and Certo addresses exactly that failure mode with a closed-set camera check that returns one of three honest outcomes — match, mismatch, or "I'm not sure" — and never guesses. The product is credible precisely because it doesn't overreach: it's scoped, built, and positioned as a Class IIa medical device candidate from day one, with a staged compliance path rather than a wording trick to dodge regulation.
+Verifi is a voice-first safety check that verifies the specific medication someone is about to take actually matches what their schedule expects, at the exact moment they're holding it — closing a gap that reminder apps like Medisafe and MyTherapy don't touch, since those tools tell you *when* to take something but never check *what's in your hand*. It's built first for individuals managing their own medication — especially the 1 in 4 Portuguese seniors who live alone — with a professional caregiver tier as the path to revenue. Look-alike/sound-alike medication confusion alone is estimated to cause 6–15% of all medication errors, and Verifi addresses exactly that failure mode with a closed-set camera check that returns one of three honest outcomes — match, mismatch, or "I'm not sure" — and never guesses. The product is credible precisely because it doesn't overreach: it's scoped, built, and positioned as a Class IIa medical device candidate from day one, with a staged compliance path rather than a wording trick to dodge regulation.
 
 ---
 
 ## 1. Problem Statement
 
-Medication management tools solve "remembering it's time" (reminders) or "what is this pill" (identification), but nothing verifies that the specific medication a person is about to take matches what their schedule expects, at the moment they're holding it. Medisafe and MyTherapy — the two most widely used medication apps in Europe — are reminder-and-adherence platforms: they prompt at the right time and log whether a dose was confirmed. Neither one looks at the physical item in the user's hand. That's the gap Certo closes.
+Medication management tools solve "remembering it's time" (reminders) or "what is this pill" (identification), but nothing verifies that the specific medication a person is about to take matches what their schedule expects, at the moment they're holding it. Medisafe and MyTherapy — the two most widely used medication apps in Europe — are reminder-and-adherence platforms: they prompt at the right time and log whether a dose was confirmed. Neither one looks at the physical item in the user's hand. That's the gap Verifi closes.
 
 This gap shows up everywhere medication is self-administered or given by someone else: a person managing five prescriptions at home, someone with low vision who can't read a label, a person with cognitive difficulty who mixes up look-alike boxes, and a home-care aide juggling multiple clients on one shift.
 
 The scale of the underlying error is documented, not assumed:
 - The WHO estimates that roughly 1 in 30 patients suffer harm from medication errors, more than a quarter of it serious or life-threatening.
-- Look-alike/sound-alike (LASA) confusion — the exact failure mode Certo targets — is estimated across multiple studies to account for **6.2% to 14.7% of all medication errors**.
+- Look-alike/sound-alike (LASA) confusion — the exact failure mode Verifi targets — is estimated across multiple studies to account for **6.2% to 14.7% of all medication errors**.
 - Portugal is the EU's third most aged country. Over 2.5 million people are 65+, one in four seniors live alone, and among women over 65 that rises to one in three. More than half of all one-person households in Portugal are elderly, making Portugal the EU's fourth-highest country for that specific share.
 
-Certo closes that gap for anyone in that position: schedule → expected item → physical verification → confirm/reject/uncertain → action logged.
+Verifi closes that gap for anyone in that position: schedule → expected item → physical verification → confirm/reject/uncertain → action logged.
 
 ---
 
@@ -87,7 +87,7 @@ Three states only for any verification: **Confirmed match / Confirmed mismatch /
 6. Action (taken / skipped / mismatch flagged) is logged.
 
 **Demo example:**
-> "Certo, what do I need to take now?"
+> "Verifi, what do I need to take now?"
 > *"You need to take your Amoxicillin now."*
 > *(user scans the correct box)*
 > *"This is your Amoxicillin. It matches what's scheduled for now. Take one capsule after food."*
@@ -249,7 +249,7 @@ The staged path this document commits to instead:
 
 - **Stage 0 — Hackathon prototype (now):** No real patient data, no real clinical claims made publicly, explicitly demoed and described as a prototype. This stage carries no MDR obligation because it is not placed on the market or used with real patients.
 - **Stage 1 — Informal pilot:** Any use with real people's real medication requires informed consent, framing as a research/beta tool, and explicit disclosure that it is not a certified medical device and should not be relied on as a sole safety check. No claims of clinical validation are made at this stage, consistent with the product's own principle of never overstating certainty.
-- **Stage 2 — Path to CE marking:** Before any deployment marketed as a safety tool to real patients or sold to a care facility as a liability-reducing product, Certo pursues Class IIa CE marking: a notified body, a technical file, a clinical evaluation, and a quality management system. This is 12–18 months of real regulatory work, budgeted and planned for, not skipped.
+- **Stage 2 — Path to CE marking:** Before any deployment marketed as a safety tool to real patients or sold to a care facility as a liability-reducing product, Verifi pursues Class IIa CE marking: a notified body, a technical file, a clinical evaluation, and a quality management system. This is 12–18 months of real regulatory work, budgeted and planned for, not skipped.
 
 Additional notes:
 - GDPR (and Portuguese data protection law) applies to any stored health-adjacent data; the production version needs a data processing assessment before handling real patient data, at or before Stage 1.
