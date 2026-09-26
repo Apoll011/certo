@@ -29,23 +29,34 @@ class AiToolRegistry {
       MarkMedicationTakenTool(state),
       SnoozeMedicationTool(state),
       GetUserSummaryTool(state),
+      GetLastDoseTool(state),
+      GetDoseHistoryTool(state),
+      SkipMedicationTool(state),
+      ReadInstructionsTool(state),
+      GetTodayScheduleTool(state, clock: clock),
     ]);
     return registry;
   }
 
-  /// Creates a complete registry loaded with medication tools, voice TTS, and visual scanning tools.
+  /// Creates a complete registry with medication, voice, and visual tools.
   factory AiToolRegistry.withAllTools(
     AppState state, {
     DateTime Function()? clock,
     Future<void> Function(String text)? onSpeak,
     Future<void> Function(VisualModeRequest request)? onStartVisualMode,
     void Function(VisualVerificationCardData data)? onShowVisualResult,
+    Future<String> Function(String question)? onAskUser,
+    Future<void> Function()? onCloseVoiceMode,
+    Future<void> Function()? onCapturePhoto,
   }) {
     final registry = AiToolRegistry.withMedicationTools(state, clock: clock);
     registry.registerVoiceTools(onSpeak: onSpeak);
     registry.registerVisionTools(
       onStartVisualMode: onStartVisualMode,
       onShowResult: onShowVisualResult,
+      onAskUser: onAskUser,
+      onCloseVoiceMode: onCloseVoiceMode,
+      onCapturePhoto: onCapturePhoto,
     );
     return registry;
   }
@@ -56,53 +67,47 @@ class AiToolRegistry {
     register(SpeakTool(onSpeak: onSpeak, toolName: 'speak'));
   }
 
-  /// Registers camera visual scanning tools (`start_visual_mode` and `show_visual_verification_result`).
+  /// Registers camera / session tools.
   void registerVisionTools({
     Future<void> Function(VisualModeRequest request)? onStartVisualMode,
     void Function(VisualVerificationCardData data)? onShowResult,
+    Future<String> Function(String question)? onAskUser,
+    Future<void> Function()? onCloseVoiceMode,
+    Future<void> Function()? onCapturePhoto,
   }) {
     register(StartVisualModeTool(onStartVisualMode: onStartVisualMode));
     register(ShowVisualVerificationResultTool(onShowResult: onShowResult));
+    register(AskUserTool(onAskUser: onAskUser));
+    register(CloseVoiceModeTool(onClose: onCloseVoiceMode));
+    register(CapturePhotoTool(onCapture: onCapturePhoto));
   }
 
-
-  /// Register a single tool.
   void register(AiTool tool) {
     _tools[tool.name] = tool;
   }
 
-  /// Register multiple tools.
   void registerAll(Iterable<AiTool> tools) {
     for (final tool in tools) {
       register(tool);
     }
   }
 
-  /// Unregister a tool by name.
   bool unregister(String name) {
     return _tools.remove(name) != null;
   }
 
-  /// Look up a registered tool by name.
   AiTool? getTool(String name) => _tools[name];
 
-  /// All registered tool names.
   List<String> get toolNames => _tools.keys.toList();
 
-  /// Converts all registered tools into OpenAI Chat Completion `tools` array.
   List<Map<String, dynamic>> toOpenAiTools() {
     return _tools.values.map((t) => t.toOpenAiTool()).toList();
   }
 
-  /// Converts all registered tools into MCP (Model Context Protocol) tool specs.
   List<Map<String, dynamic>> toMcpTools() {
     return _tools.values.map((t) => t.toMcpTool()).toList();
   }
 
-  /// Dispatches execution of a tool by name.
-  ///
-  /// [arguments] can be either a JSON string (as returned by OpenAI tool_calls)
-  /// or a `Map<String, dynamic>`.
   Future<ToolResult> execute(String name, dynamic arguments) async {
     final tool = _tools[name];
     if (tool == null) {
@@ -133,7 +138,9 @@ class AiToolRegistry {
     try {
       debugPrint('AiToolRegistry: Executing tool "$name" with args: $parsedArgs');
       final result = await tool.execute(parsedArgs);
-      debugPrint('AiToolRegistry: Tool "$name" completed with success: ${result.success}');
+      debugPrint(
+        'AiToolRegistry: Tool "$name" completed with success: ${result.success}',
+      );
       return result;
     } catch (e, st) {
       debugPrint('AiToolRegistry: Tool "$name" threw exception: $e\n$st');

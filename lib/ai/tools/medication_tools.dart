@@ -749,3 +749,315 @@ class GetUserSummaryTool extends AiTool {
     });
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. GetLastDoseTool
+// ─────────────────────────────────────────────────────────────────────────────
+
+class GetLastDoseTool extends AiTool {
+  GetLastDoseTool(this.state);
+
+  final AppState state;
+
+  @override
+  String get name => 'get_last_dose';
+
+  @override
+  String get description =>
+      'Get the most recent dose action for a medication (last time it was taken, skipped, etc.). Use when the user asks "when did I last take X?" or "did I take my last dose?".';
+
+  @override
+  Map<String, dynamic> get parameters => {
+        'type': 'object',
+        'properties': {
+          'id': {
+            'type': 'string',
+            'description': 'Medication ID if known.',
+          },
+          'name': {
+            'type': 'string',
+            'description': 'Medication name, e.g. "Amoxicillin".',
+          },
+          'taken_only': {
+            'type': 'boolean',
+            'description':
+                'If true (default), only consider "taken" actions. If false, return the latest action of any type.',
+          },
+        },
+        'required': [],
+      };
+
+  @override
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
+    final id = arguments['id'] as String?;
+    final medName = arguments['name'] as String?;
+    final takenOnly = arguments['taken_only'] as bool? ?? true;
+
+    final existing = findMedication(state, id: id, name: medName);
+    if (existing == null) {
+      return ToolResult.failure(
+        'Could not find medication matching ${id != null ? 'id "$id"' : 'name "$medName"'}.',
+      );
+    }
+
+    final entry = takenOnly
+        ? state.lastTakenDoseFor(existing.id)
+        : state.lastDoseFor(existing.id);
+
+    if (entry == null) {
+      return ToolResult.ok({
+        'medication_id': existing.id,
+        'medication_name': existing.name,
+        'found': false,
+        'is_taken_today': state.isTaken(existing.id),
+        'message': takenOnly
+            ? 'No taken dose recorded yet for "${existing.name}".'
+            : 'No dose history recorded yet for "${existing.name}".',
+      });
+    }
+
+    return ToolResult.ok({
+      'medication_id': existing.id,
+      'medication_name': existing.name,
+      'found': true,
+      'is_taken_today': state.isTaken(existing.id),
+      'last_dose': entry.toJson(),
+      'message':
+          'Last ${entry.action} for "${existing.name}" was at ${entry.at.toIso8601String()}.',
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. GetDoseHistoryTool
+// ─────────────────────────────────────────────────────────────────────────────
+
+class GetDoseHistoryTool extends AiTool {
+  GetDoseHistoryTool(this.state);
+
+  final AppState state;
+
+  @override
+  String get name => 'get_dose_history';
+
+  @override
+  String get description =>
+      'List recent dose history (taken, skipped, mismatch, uncertain). Optionally filter by medication or action. Use for adherence questions and "what did I take today?".';
+
+  @override
+  Map<String, dynamic> get parameters => {
+        'type': 'object',
+        'properties': {
+          'id': {
+            'type': 'string',
+            'description': 'Optional medication ID to filter.',
+          },
+          'name': {
+            'type': 'string',
+            'description': 'Optional medication name to filter.',
+          },
+          'action': {
+            'type': 'string',
+            'enum': ['taken', 'skipped', 'mismatch', 'uncertain'],
+            'description': 'Optional action filter.',
+          },
+          'limit': {
+            'type': 'integer',
+            'description': 'Max entries to return (default 10, max 50).',
+          },
+        },
+        'required': [],
+      };
+
+  @override
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
+    final id = arguments['id'] as String?;
+    final medName = arguments['name'] as String?;
+    final action = arguments['action'] as String?;
+    final limit =
+        ((arguments['limit'] as num?)?.toInt() ?? 10).clamp(1, 50);
+
+    String? medicationId = id;
+    if (medicationId == null && medName != null) {
+      final existing = findMedication(state, name: medName);
+      if (existing == null) {
+        return ToolResult.failure('Could not find medication named "$medName".');
+      }
+      medicationId = existing.id;
+    }
+
+    // Prefer fresh remote history when signed in.
+    await state.refreshDoseHistory(limit: 50);
+
+    final entries = state.doseHistoryFor(
+      medicationId: medicationId,
+      action: action,
+      limit: limit,
+    );
+
+    return ToolResult.ok({
+      'count': entries.length,
+      'events': entries.map((e) => e.toJson()).toList(),
+      'doses_taken_today': state.takenIds.length,
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. SkipMedicationTool
+// ─────────────────────────────────────────────────────────────────────────────
+
+class SkipMedicationTool extends AiTool {
+  SkipMedicationTool(this.state);
+
+  final AppState state;
+
+  @override
+  String get name => 'skip_medication';
+
+  @override
+  String get description =>
+      'Mark a medication dose as skipped for now (user is intentionally not taking it). Logs a skipped dose event.';
+
+  @override
+  Map<String, dynamic> get parameters => {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string', 'description': 'Medication ID.'},
+          'name': {'type': 'string', 'description': 'Medication name.'},
+        },
+        'required': [],
+      };
+
+  @override
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
+    final existing = findMedication(
+      state,
+      id: arguments['id'] as String?,
+      name: arguments['name'] as String?,
+    );
+    if (existing == null) {
+      return ToolResult.failure('Could not find that medication.');
+    }
+    state.skipDose(existing.id);
+    return ToolResult.ok({
+      'medication_id': existing.id,
+      'medication_name': existing.name,
+      'action': 'skipped',
+      'message': 'Logged "${existing.name}" as skipped.',
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13. ReadInstructionsTool
+// ─────────────────────────────────────────────────────────────────────────────
+
+class ReadInstructionsTool extends AiTool {
+  ReadInstructionsTool(this.state);
+
+  final AppState state;
+
+  @override
+  String get name => 'read_instructions';
+
+  @override
+  String get description =>
+      'Read the saved intake instructions for a medication exactly as stored (do not invent medical advice). Use when the user asks to read instructions or how to take a med.';
+
+  @override
+  Map<String, dynamic> get parameters => {
+        'type': 'object',
+        'properties': {
+          'id': {'type': 'string', 'description': 'Medication ID.'},
+          'name': {'type': 'string', 'description': 'Medication name.'},
+        },
+        'required': [],
+      };
+
+  @override
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
+    final existing = findMedication(
+      state,
+      id: arguments['id'] as String?,
+      name: arguments['name'] as String?,
+    );
+    if (existing == null) {
+      return ToolResult.failure('Could not find that medication.');
+    }
+    return ToolResult.ok({
+      'medication_id': existing.id,
+      'medication_name': existing.name,
+      'dosage': existing.dosage,
+      'instruction': existing.instruction,
+      'times': existing.times,
+      'notes': existing.notes,
+      'message':
+          '${existing.name}: ${existing.dosage}. ${existing.instruction}',
+    });
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 14. GetTodayScheduleTool
+// ─────────────────────────────────────────────────────────────────────────────
+
+class GetTodayScheduleTool extends AiTool {
+  GetTodayScheduleTool(this.state, {DateTime Function()? clock})
+      : _clock = clock ?? DateTime.now;
+
+  final AppState state;
+  final DateTime Function() _clock;
+
+  @override
+  String get name => 'get_today_schedule';
+
+  @override
+  String get description =>
+      'Get today\'s full medication schedule with which doses are already taken, due, upcoming, or missed. Prefer this for "what do I take today?" overview questions.';
+
+  @override
+  Map<String, dynamic> get parameters => {
+        'type': 'object',
+        'properties': {},
+        'required': [],
+      };
+
+  @override
+  Future<ToolResult> execute(Map<String, dynamic> arguments) async {
+    final now = _clock();
+    final today = dateOnly(now);
+    final active = state.medicationsWithStatus(MedicationStatus.active);
+    final items = <Map<String, dynamic>>[];
+
+    for (final m in active) {
+      if (!isScheduledOn(m, today)) continue;
+      for (final time in m.times) {
+        final at = resolveTimeOnDay(time, today);
+        if (at == null) continue;
+        final taken = state.isTaken(m.id);
+        final missed = !taken && at.isBefore(now);
+        items.add({
+          'medication_id': m.id,
+          'medication_name': m.name,
+          'dosage': m.dosage,
+          'instruction': m.instruction,
+          'time': time,
+          'scheduled_at': at.toIso8601String(),
+          'is_taken': taken,
+          'is_missed': missed,
+          'is_upcoming': !taken && !at.isBefore(now),
+        });
+      }
+    }
+
+    items.sort((a, b) => (a['scheduled_at'] as String)
+        .compareTo(b['scheduled_at'] as String));
+
+    return ToolResult.ok({
+      'date': today.toIso8601String().split('T').first,
+      'dose_count': items.length,
+      'doses': items,
+    });
+  }
+}

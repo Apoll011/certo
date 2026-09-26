@@ -14,12 +14,23 @@ import '../models/medication.dart';
 import '../services/elevenlabs_service.dart';
 import '../state/app_state.dart';
 import '../utils/schedule.dart';
+import 'voice_mode_sheet.dart';
+
+/// Why visual mode was opened.
+enum VisualModeIntent {
+  /// Verify a package against the current schedule.
+  verify,
+
+  /// Scan a package to add it as a new medication.
+  addMedication,
+}
 
 /// Entry helper to launch Visual Verification Mode.
 Future<void> showVisualVerificationScreen(
   BuildContext context, {
   Medication? targetMedication,
   String? expectedMedicationName,
+  VisualModeIntent intent = VisualModeIntent.verify,
   VisualVerificationStatus initialStatus = VisualVerificationStatus.identifying,
 }) {
   return Navigator.of(context).push<void>(
@@ -27,6 +38,7 @@ Future<void> showVisualVerificationScreen(
       builder: (_) => VisualVerificationScreen(
         targetMedication: targetMedication,
         expectedMedicationName: expectedMedicationName,
+        intent: intent,
         initialStatus: initialStatus,
       ),
       fullscreenDialog: true,
@@ -40,11 +52,13 @@ class VisualVerificationScreen extends StatefulWidget {
     super.key,
     this.targetMedication,
     this.expectedMedicationName,
+    this.intent = VisualModeIntent.verify,
     this.initialStatus = VisualVerificationStatus.identifying,
   });
 
   final Medication? targetMedication;
   final String? expectedMedicationName;
+  final VisualModeIntent intent;
   final VisualVerificationStatus initialStatus;
 
   @override
@@ -305,9 +319,12 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
         },
       );
 
-      final prompt = AiAssistantService.visualVerificationPrompt(
-        expectedMedicationName: _expectedName.isNotEmpty ? _expectedName : null,
-      );
+      final prompt = widget.intent == VisualModeIntent.addMedication
+          ? AiAssistantService.visualAddMedicationPrompt()
+          : AiAssistantService.visualVerificationPrompt(
+              expectedMedicationName:
+                  _expectedName.isNotEmpty ? _expectedName : null,
+            );
 
       final result = await assistant.verifyMedicationImage(
         imageBase64: b64,
@@ -322,7 +339,9 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
           _status = VisualVerificationStatus.uncertain;
           _matchMessage = result.response.trim().isNotEmpty
               ? result.response.trim()
-              : 'I couldn\'t verify this confidently. Please try again.';
+              : widget.intent == VisualModeIntent.addMedication
+                  ? 'I couldn\'t read the package clearly. Please try again.'
+                  : 'I couldn\'t verify this confidently. Please try again.';
         });
       }
     } catch (e) {
@@ -341,6 +360,23 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
 
   void _onConfirmDose() {
     final appState = Provider.of<AppState>(context, listen: false);
+    if (widget.intent == VisualModeIntent.addMedication) {
+      // AI should already have called create_medication; confirm and close.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            _identifiedName.isNotEmpty
+                ? '✓ "$_identifiedName" ready.'
+                : '✓ Done.',
+          ),
+          backgroundColor: const Color(0xFF15803D),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      Navigator.of(context).pop();
+      return;
+    }
+
     final med = findMedication(
       appState,
       name: _identifiedName.isNotEmpty ? _identifiedName : _expectedName,
@@ -360,6 +396,19 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
       ),
     );
     Navigator.of(context).pop();
+  }
+
+  void _openVoiceMode() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute<void>(
+        builder: (_) => VoiceModeScreen(
+          intent: widget.intent == VisualModeIntent.addMedication
+              ? VoiceModeIntent.addMedication
+              : VoiceModeIntent.general,
+        ),
+        fullscreenDialog: true,
+      ),
+    );
   }
 
   void _resetToScan() {
@@ -412,14 +461,20 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
           // ── Top controls ────────────────────────────────────────────────
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   _RoundHeaderBtn(
                     icon: Icons.close_rounded,
                     onTap: () => Navigator.of(context).pop(),
                   ),
+                  const Spacer(),
+                  _RoundHeaderBtn(
+                    icon: Icons.mic_rounded,
+                    onTap: _openVoiceMode,
+                    tooltip: 'Voice mode',
+                  ),
+                  const SizedBox(width: 10),
                   _RoundHeaderBtn(
                     icon: _flashOn
                         ? Icons.flash_on_rounded
@@ -437,14 +492,16 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
               top: MediaQuery.of(context).padding.top + 72,
               left: 24,
               right: 24,
-              child: const Text(
-                'Point at the medication package',
+              child: Text(
+                widget.intent == VisualModeIntent.addMedication
+                    ? 'Scan the package to add it'
+                    : 'Point at the medication package',
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  shadows: [Shadow(blurRadius: 8, color: Colors.black54)],
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  shadows: [Shadow(blurRadius: 10, color: Colors.black54)],
                 ),
               ),
             ),
@@ -455,13 +512,16 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
             child: _VerificationBottomSheet(
               status: _status,
               isProcessing: _isProcessing,
+              isAddMode: widget.intent == VisualModeIntent.addMedication,
               identifiedName: _identifiedName.isNotEmpty
                   ? _identifiedName
                   : 'Medication',
               category: _category.isNotEmpty ? _category : 'Prescription',
               matchMessage: _matchMessage.isNotEmpty
                   ? _matchMessage
-                  : 'This is your medication. It\'s scheduled for now.',
+                  : widget.intent == VisualModeIntent.addMedication
+                      ? 'Package identified. Ready to add.'
+                      : 'This is your medication. It\'s scheduled for now.',
               expectedName:
                   _expectedName.isNotEmpty ? _expectedName : 'Scheduled dose',
               nextDoseTime:
@@ -473,6 +533,7 @@ class _VisualVerificationScreenState extends State<VisualVerificationScreen> {
               onConfirm: _onConfirmDose,
               onScanAnother: _resetToScan,
               onTryAgain: _resetToScan,
+              onOpenVoice: _openVoiceMode,
             ),
           ),
         ],
@@ -489,6 +550,7 @@ class _VerificationBottomSheet extends StatelessWidget {
   const _VerificationBottomSheet({
     required this.status,
     required this.isProcessing,
+    required this.isAddMode,
     required this.identifiedName,
     required this.category,
     required this.matchMessage,
@@ -499,10 +561,12 @@ class _VerificationBottomSheet extends StatelessWidget {
     required this.onConfirm,
     required this.onScanAnother,
     required this.onTryAgain,
+    required this.onOpenVoice,
   });
 
   final VisualVerificationStatus status;
   final bool isProcessing;
+  final bool isAddMode;
   final String identifiedName;
   final String category;
   final String matchMessage;
@@ -513,6 +577,7 @@ class _VerificationBottomSheet extends StatelessWidget {
   final VoidCallback onConfirm;
   final VoidCallback onScanAnother;
   final VoidCallback onTryAgain;
+  final VoidCallback onOpenVoice;
 
   @override
   Widget build(BuildContext context) {
@@ -526,23 +591,28 @@ class _VerificationBottomSheet extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Color(0x1A000000),
-            blurRadius: 24,
-            offset: Offset(0, -6),
+            color: Color(0x33000000),
+            blurRadius: 28,
+            offset: Offset(0, -8),
           ),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 28),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        12,
+        24,
+        20 + MediaQuery.of(context).padding.bottom,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 38,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 20),
+            width: 40,
+            height: 5,
+            margin: const EdgeInsets.only(bottom: 18),
             decoration: BoxDecoration(
-              color: const Color(0xFFE0E0E0),
-              borderRadius: BorderRadius.circular(2),
+              color: const Color(0xFFD1D5DB),
+              borderRadius: BorderRadius.circular(3),
             ),
           ),
           switch (status) {
@@ -567,47 +637,61 @@ class _VerificationBottomSheet extends StatelessWidget {
           children: [
             isProcessing
                 ? const SizedBox(
-                    width: 18,
-                    height: 18,
+                    width: 20,
+                    height: 20,
                     child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
+                      strokeWidth: 2.4,
                       color: Color(0xFF3366FF),
                     ),
                   )
                 : const Icon(
                     Icons.auto_awesome_rounded,
                     color: Color(0xFF3366FF),
-                    size: 20,
+                    size: 22,
                   ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 10),
             Text(
               isProcessing
                   ? 'Analyzing with AI…'
-                  : 'Ready to scan',
+                  : isAddMode
+                      ? 'Ready to add'
+                      : 'Ready to scan',
               style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1E293B),
+                fontSize: 19,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
               ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           isProcessing
-              ? 'Checking the package against your schedule.'
-              : 'Tap the button to capture and verify.',
-          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
+              ? (isAddMode
+                  ? 'Reading the package to add it to your list.'
+                  : 'Checking the package against your schedule.')
+              : (isAddMode
+                  ? 'Tap to capture the package label.'
+                  : 'Tap to capture and verify.'),
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 15, color: Color(0xFF64748B), height: 1.35),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 22),
         GestureDetector(
           onTap: isProcessing ? null : onCapture,
           child: Container(
-            width: 72,
-            height: 72,
+            width: 76,
+            height: 76,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: const Color(0xFF3366FF), width: 3.5),
+              border: Border.all(color: const Color(0xFF3366FF), width: 4),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF3366FF).withValues(alpha: 0.25),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             padding: const EdgeInsets.all(5),
             child: Container(
@@ -620,49 +704,63 @@ class _VerificationBottomSheet extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 14),
+        TextButton.icon(
+          onPressed: onOpenVoice,
+          icon: const Icon(Icons.mic_rounded, size: 18),
+          label: const Text('Ask with voice instead'),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF3366FF),
+            textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildConfirmedMatchState() {
+    final confirmLabel = isAddMode ? 'Done' : 'Confirm taken';
+    final badgeLabel = isAddMode ? 'Ready to add' : 'Identified';
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: Text(
                 identifiedName,
                 style: const TextStyle(
-                  fontSize: 21,
+                  fontSize: 24,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF0F172A),
-                  letterSpacing: -0.3,
+                  letterSpacing: -0.4,
+                  height: 1.15,
                 ),
               ),
             ),
+            const SizedBox(width: 8),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
               decoration: BoxDecoration(
                 color: const Color(0xFFE8F8F0),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFA3E7C3)),
+                border: Border.all(color: const Color(0xFF86EFAC)),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    Icons.check_circle_outline_rounded,
-                    color: Color(0xFF0E9347),
-                    size: 15,
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: Color(0xFF15803D),
+                    size: 16,
                   ),
-                  SizedBox(width: 5),
+                  const SizedBox(width: 5),
                   Text(
-                    'Identified',
-                    style: TextStyle(
-                      color: Color(0xFF0E9347),
+                    badgeLabel,
+                    style: const TextStyle(
+                      color: Color(0xFF15803D),
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
                     ),
@@ -672,96 +770,100 @@ class _VerificationBottomSheet extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 3),
+        const SizedBox(height: 4),
         Text(
           category,
-          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF64748B)),
         ),
         const SizedBox(height: 14),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           decoration: BoxDecoration(
             color: const Color(0xFFEAF8F1),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFBBF7D0)),
           ),
           child: Row(
             children: [
               const Icon(
-                Icons.check_circle_outline_rounded,
+                Icons.check_circle_rounded,
                 color: Color(0xFF15803D),
-                size: 20,
+                size: 22,
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   matchMessage,
                   style: const TextStyle(
-                    color: Color(0xFF15803D),
-                    fontSize: 13,
+                    color: Color(0xFF166534),
+                    fontSize: 14,
                     fontWeight: FontWeight.w600,
+                    height: 1.35,
                   ),
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 14),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'NEXT DOSE',
-                style: TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
+        if (!isAddMode) ...[
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'NEXT DOSE',
+                  style: TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.access_time_filled_rounded,
-                    color: Color(0xFF3366FF),
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    nextDoseTime,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0F172A),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.access_time_filled_rounded,
+                      color: Color(0xFF3366FF),
+                      size: 18,
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    nextDoseInstruction,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: Color(0xFF64748B),
-                      fontWeight: FontWeight.w500,
+                    const SizedBox(width: 8),
+                    Text(
+                      nextDoseTime,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                    const Spacer(),
+                    Text(
+                      nextDoseInstruction,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
         const SizedBox(height: 18),
         SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 54,
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3366FF),
@@ -772,24 +874,35 @@ class _VerificationBottomSheet extends StatelessWidget {
               ),
             ),
             onPressed: onConfirm,
-            child: const Text(
-              'Confirm',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            child: Text(
+              confirmLabel,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
           ),
         ),
-        Center(
-          child: TextButton(
-            onPressed: onScanAnother,
-            child: const Text(
-              'Scan another',
-              style: TextStyle(
-                color: Color(0xFF3366FF),
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextButton(
+              onPressed: onScanAnother,
+              child: const Text(
+                'Scan another',
+                style: TextStyle(
+                  color: Color(0xFF3366FF),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
-          ),
+            TextButton.icon(
+              onPressed: onOpenVoice,
+              icon: const Icon(Icons.mic_rounded, size: 16),
+              label: const Text('Voice'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF64748B),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -800,43 +913,50 @@ class _VerificationBottomSheet extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 48,
-          height: 48,
+          width: 56,
+          height: 56,
           decoration: BoxDecoration(
             color: const Color(0xFFF04438),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFFF04438).withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          child: const Icon(Icons.warning_rounded, color: Colors.white, size: 26),
+          child: const Icon(Icons.warning_rounded, color: Colors.white, size: 30),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         const Text(
           'Not your medication',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 24,
             fontWeight: FontWeight.w800,
             color: Color(0xFF0F172A),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           matchMessage.isNotEmpty
               ? matchMessage
               : 'This isn\'t the medication scheduled for now. Please scan another package.',
           textAlign: TextAlign.center,
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 15,
             color: Color(0xFF64748B),
-            height: 1.35,
+            height: 1.4,
           ),
         ),
         const SizedBox(height: 18),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
+            color: const Color(0xFFFEF2F2),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
+            border: Border.all(color: const Color(0xFFFECACA)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -844,7 +964,7 @@ class _VerificationBottomSheet extends StatelessWidget {
               const Text(
                 'YOU NEED',
                 style: TextStyle(
-                  color: Color(0xFF64748B),
+                  color: Color(0xFFB91C1C),
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
@@ -857,7 +977,7 @@ class _VerificationBottomSheet extends StatelessWidget {
                     child: Text(
                       expectedName,
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 16,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF0F172A),
                       ),
@@ -879,7 +999,7 @@ class _VerificationBottomSheet extends StatelessWidget {
         const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 54,
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3366FF),
@@ -894,6 +1014,15 @@ class _VerificationBottomSheet extends StatelessWidget {
               'Try again',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
+          ),
+        ),
+        TextButton.icon(
+          onPressed: onOpenVoice,
+          icon: const Icon(Icons.mic_rounded, size: 18),
+          label: const Text('Continue in voice mode'),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF3366FF),
+            textStyle: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -905,39 +1034,46 @@ class _VerificationBottomSheet extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 48,
-          height: 48,
+          width: 56,
+          height: 56,
           decoration: BoxDecoration(
             color: const Color(0xFF8B6BF6),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF8B6BF6).withValues(alpha: 0.35),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          child: const Icon(Icons.help_outline_rounded, color: Colors.white, size: 26),
+          child: const Icon(Icons.help_outline_rounded, color: Colors.white, size: 30),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         const Text(
           'I\'m not sure',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 24,
             fontWeight: FontWeight.w800,
             color: Color(0xFF0F172A),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           matchMessage.isNotEmpty
               ? matchMessage
               : 'I can\'t identify this medication confidently. Please move closer and scan again.',
           textAlign: TextAlign.center,
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 15,
             color: Color(0xFF64748B),
-            height: 1.35,
+            height: 1.4,
           ),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 22),
         SizedBox(
           width: double.infinity,
-          height: 52,
+          height: 54,
           child: ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3366FF),
@@ -954,30 +1090,46 @@ class _VerificationBottomSheet extends StatelessWidget {
             ),
           ),
         ),
+        TextButton.icon(
+          onPressed: onOpenVoice,
+          icon: const Icon(Icons.mic_rounded, size: 18),
+          label: const Text('Describe it with voice'),
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF3366FF),
+            textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
       ],
     );
   }
 }
 
 class _RoundHeaderBtn extends StatelessWidget {
-  const _RoundHeaderBtn({required this.icon, required this.onTap});
+  const _RoundHeaderBtn({
+    required this.icon,
+    required this.onTap,
+    this.tooltip,
+  });
 
   final IconData icon;
   final VoidCallback onTap;
+  final String? tooltip;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final btn = GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 38,
-        height: 38,
+        width: 42,
+        height: 42,
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.55),
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: Colors.white, size: 20),
+        child: Icon(icon, color: Colors.white, size: 22),
       ),
     );
+    if (tooltip != null) return Tooltip(message: tooltip!, child: btn);
+    return btn;
   }
 }

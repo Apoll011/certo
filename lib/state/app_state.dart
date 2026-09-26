@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../data/medication_repository.dart';
 import '../data/mock_data.dart';
 import '../data/profile_repository.dart';
+import '../models/dose_log_entry.dart';
 import '../models/medication.dart';
 import '../config/app_config.dart';
 import '../ai/ai.dart';
@@ -38,6 +39,9 @@ class AppState extends ChangeNotifier {
 
   /// Medication ids marked as taken for today.
   final Set<String> takenIds = {};
+
+  /// In-session dose history (newest first). Backed by Supabase when signed in.
+  final List<DoseLogEntry> doseHistory = [];
 
   /// Medication ids snoozed until a given time (in-app, mirroring the OS alarm).
   final Map<String, DateTime> _snoozedUntil = {};
@@ -82,12 +86,18 @@ class AppState extends ChangeNotifier {
     Future<void> Function(String text)? onSpeak,
     Future<void> Function(VisualModeRequest request)? onStartVisualMode,
     void Function(VisualVerificationCardData data)? onShowVisualResult,
+    Future<String> Function(String question)? onAskUser,
+    Future<void> Function()? onCloseVoiceMode,
+    Future<void> Function()? onCapturePhoto,
   }) {
     final registry = AiToolRegistry.withAllTools(
       this,
       onSpeak: onSpeak,
       onStartVisualMode: onStartVisualMode,
       onShowVisualResult: onShowVisualResult,
+      onAskUser: onAskUser,
+      onCloseVoiceMode: onCloseVoiceMode,
+      onCapturePhoto: onCapturePhoto,
     );
     final client = OpenAiCompatibleClient(
       apiKey: apiKey ?? AppConfig.aiApiKey,
@@ -223,6 +233,7 @@ class AppState extends ChangeNotifier {
       medications
         ..clear()
         ..addAll(meds ?? const []);
+      await refreshDoseHistory();
     } catch (e) {
       debugPrint('Verifi: failed to load data — $e');
     }
@@ -234,6 +245,7 @@ class AppState extends ChangeNotifier {
       ..addAll(mockMedications);
     userName = _prefs?.getString(_kNamePref) ?? demoUserName;
     takenIds.clear();
+    doseHistory.clear();
   }
 
   /// Rebuilds the OS alarm schedule from the current medication list.
@@ -442,13 +454,14 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Today's "taken" tracking
+  // Today's "taken" tracking + dose history
   // ---------------------------------------------------------------------------
 
   void toggleTaken(String id) {
     if (!takenIds.add(id)) {
       takenIds.remove(id);
     } else {
+      _logDoseLocally(id, 'taken');
       _recordDose(id, 'taken');
     }
     notifyListeners();
@@ -456,8 +469,109 @@ class AppState extends ChangeNotifier {
 
   void markTaken(String id) {
     if (takenIds.add(id)) {
+      _logDoseLocally(id, 'taken');
       _recordDose(id, 'taken');
       notifyListeners();
+    }
+  }
+
+  /// Marks a dose as skipped (not taken) and logs it.
+  void skipDose(String id) {
+    takenIds.remove(id);
+    _logDoseLocally(id, 'skipped');
+    _recordDose(id, 'skipped');
+    notifyListeners();
+  }
+
+  /// Logs a visual verification outcome (mismatch / uncertain) without changing taken.
+  void logVerification(String id, String action) {
+    if (action != 'mismatch' && action != 'uncertain') return;
+    _logDoseLocally(id, action);
+    _recordDose(id, action);
+    notifyListeners();
+  }
+
+  void _logDoseLocally(String medicationId, String action) {
+    final med = medicationById(medicationId);
+    doseHistory.insert(
+      0,
+      DoseLogEntry(
+        medicationId: medicationId,
+        medicationName: med?.name ?? medicationId,
+        action: action,
+        at: DateTime.now(),
+      ),
+    );
+    // Keep memory bounded.
+    if (doseHistory.length > 200) {
+      doseHistory.removeRange(200, doseHistory.length);
+    }
+  }
+
+  /// Last logged dose for a medication (any action), or null.
+  DoseLogEntry? lastDoseFor(String medicationId) {
+    for (final e in doseHistory) {
+      if (e.medicationId == medicationId) return e;
+    }
+    return null;
+  }
+
+  /// Last *taken* dose for a medication, or null.
+  DoseLogEntry? lastTakenDoseFor(String medicationId) {
+    for (final e in doseHistory) {
+      if (e.medicationId == medicationId && e.action == 'taken') return e;
+    }
+    return null;
+  }
+
+  /// In-memory dose history, optionally filtered. Newest first.
+  List<DoseLogEntry> doseHistoryFor({
+    String? medicationId,
+    String? action,
+    int limit = 20,
+  }) {
+    var list = doseHistory.where((e) {
+      if (medicationId != null && e.medicationId != medicationId) return false;
+      if (action != null && e.action != action) return false;
+      return true;
+    }).toList();
+    if (list.length > limit) list = list.sublist(0, limit);
+    return list;
+  }
+
+  /// Loads recent dose events from Supabase into [doseHistory] when signed in.
+  Future<void> refreshDoseHistory({int limit = 50}) async {
+    final uid = _user?.id;
+    if (uid == null || !SupabaseService.isConfigured) return;
+    try {
+      final rows = await SupabaseService.client
+          .from('dose_events')
+          .select('id, medication_id, action, created_at')
+          .eq('user_id', uid)
+          .order('created_at', ascending: false)
+          .limit(limit);
+      final list = <DoseLogEntry>[];
+      for (final row in rows as List) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final medId = map['medication_id']?.toString() ?? '';
+        final med = medicationById(medId);
+        list.add(
+          DoseLogEntry(
+            id: map['id']?.toString(),
+            medicationId: medId,
+            medicationName: med?.name ?? medId,
+            action: map['action']?.toString() ?? 'taken',
+            at: DateTime.tryParse(map['created_at']?.toString() ?? '') ??
+                DateTime.now(),
+          ),
+        );
+      }
+      doseHistory
+        ..clear()
+        ..addAll(list);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Verifi: refresh dose history failed — $e');
     }
   }
 

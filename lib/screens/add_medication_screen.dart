@@ -64,7 +64,10 @@ class AddMedicationScreen extends StatelessWidget {
                     icon: Icons.camera_alt_outlined,
                     title: l10n.scanPackage,
                     subtitle: l10n.scanPackageSubtitle,
-                    onTap: () => showVisualVerificationScreen(context),
+                    onTap: () => showVisualVerificationScreen(
+                      context,
+                      intent: VisualModeIntent.addMedication,
+                    ),
                   ),
                   const SizedBox(height: AppSpacing.md),
                   _optionCard(

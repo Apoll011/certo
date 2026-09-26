@@ -15,20 +15,22 @@ import '../state/app_state.dart';
 import 'visual_verification_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Design tokens
+//  Design tokens — light Certo voice palette (matches voice-mode-integrated)
 // ─────────────────────────────────────────────────────────────────────────────
 class _VC {
-  static const bg = Color(0xFF0D1B2E);
-  static const bgCard = Color(0xFF182438);
+  static const bg = Color(0xFFF4F6FA);
+  static const bgCard = Color(0xFFFFFFFF);
   static const orbBlue = Color(0xFF8EC5FC);
-  static const orbPurple = Color(0xFFAB8FF0);
-  static const orbPink = Color(0xFFE0C3FC);
-  static const orbHighlight = Color(0xFFD6EEFF);
-  static const userBubble = Color(0xFF243350);
-  static const aiBubble = Color(0xFF1E3A5F);
-  static const textPrimary = Colors.white;
-  static const textSub = Color(0xFF7B9CC5);
-  static const divider = Color(0xFF243350);
+  static const orbPurple = Color(0xFFB8A0F0);
+  static const userBubble = Color(0xFFE8EEF8);
+  static const aiBubble = Color(0xFFFFFFFF);
+  static const textPrimary = Color(0xFF13005A);
+  static const textSub = Color(0xFF5A6B88);
+  static const accent = Color(0xFF3366FF);
+  static const divider = Color(0xFFE2E8F0);
+  static const errorBg = Color(0xFFFDEBEC);
+  static const errorBorder = Color(0xFFF5C2C5);
+  static const errorText = Color(0xFFB42318);
 }
 
 enum VoiceModeIntent { general, addMedication }
@@ -497,49 +499,49 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final showSuggestions = _bubbles.isEmpty &&
+        _errorText == null &&
+        _phase == _VoicePhase.listening;
+
     return Scaffold(
       backgroundColor: _VC.bg,
       body: SafeArea(
         child: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
                   _IconBtn(
-                    icon: Icons.arrow_back_ios_new_rounded,
-                    tooltip: 'Back',
+                    icon: Icons.close_rounded,
+                    tooltip: 'Close',
                     onTap: () => Navigator.of(context).pop(),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      widget.intent == VoiceModeIntent.addMedication
-                          ? 'Add medication'
-                          : 'Voice Assistant',
-                      style: const TextStyle(
-                        color: _VC.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                      ),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
                     ),
-                  ),
-                  Text(
-                    _phaseLabel,
-                    style: const TextStyle(
-                      color: _VC.textSub,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                    decoration: BoxDecoration(
+                      color: _VC.accent.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      _phaseLabel,
+                      style: const TextStyle(
+                        color: _VC.accent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
 
-            // ── Orb ───────────────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 16),
+              padding: const EdgeInsets.only(top: 12, bottom: 8),
               child: GestureDetector(
                 onTap: _onOrbTap,
                 child: AnimatedBuilder(
@@ -559,6 +561,37 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
               ),
             ),
 
+            Text(
+              _phase == _VoicePhase.idle
+                  ? 'What can I help you with?'
+                  : _phaseLabel,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _VC.textPrimary,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
+            ),
+            if (_phase == _VoicePhase.listening &&
+                _displayTranscript.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  '"$_displayTranscript"',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _VC.textSub,
+                    fontSize: 15,
+                    fontStyle: FontStyle.italic,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
+
             if (_errorText != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -566,14 +599,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF3B1520),
+                    color: _VC.errorBg,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF8B263E)),
+                    border: Border.all(color: _VC.errorBorder),
                   ),
                   child: Text(
                     _errorText!,
                     style: const TextStyle(
-                      color: Color(0xFFFFD1D1),
+                      color: _VC.errorText,
                       fontSize: 13,
                       height: 1.35,
                     ),
@@ -581,35 +614,16 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                 ),
               ),
 
-            // ── Live transcript while listening ───────────────────────────
-            if (_phase == _VoicePhase.listening &&
-                _displayTranscript.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    _displayTranscript,
-                    style: TextStyle(
-                      color: _VC.textSub.withValues(alpha: 0.9),
-                      fontSize: 14,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
-              ),
-
-            // ── Text chat ─────────────────────────────────────────────────
             Expanded(
-              child: ListView.builder(
-                controller: _chatScroll,
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                itemCount: _bubbles.length,
-                itemBuilder: (context, i) {
-                  final b = _bubbles[i];
-                  return _ChatRow(bubble: b);
-                },
-              ),
+              child: showSuggestions
+                  ? const _SuggestionsCard()
+                  : ListView.builder(
+                      controller: _chatScroll,
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                      itemCount: _bubbles.length,
+                      itemBuilder: (context, i) =>
+                          _ChatRow(bubble: _bubbles[i]),
+                    ),
             ),
           ],
         ),
@@ -627,7 +641,7 @@ class _ChatRow extends StatelessWidget {
     final align =
         bubble.isUser ? Alignment.centerRight : Alignment.centerLeft;
     final color = bubble.isUser ? _VC.userBubble : _VC.aiBubble;
-    final label = bubble.isUser ? 'You' : 'AI';
+    final label = bubble.isUser ? 'You' : 'Certo';
 
     return Align(
       alignment: align,
@@ -641,6 +655,15 @@ class _ChatRow extends StatelessWidget {
           color: color,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: _VC.divider),
+          boxShadow: bubble.isUser
+              ? null
+              : const [
+                  BoxShadow(
+                    color: Color(0x0A13005A),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
+                ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -648,7 +671,7 @@ class _ChatRow extends StatelessWidget {
             Text(
               label,
               style: TextStyle(
-                color: bubble.isUser ? _VC.orbBlue : _VC.orbPurple,
+                color: bubble.isUser ? _VC.accent : _VC.orbPurple,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
@@ -669,6 +692,63 @@ class _ChatRow extends StatelessWidget {
   }
 }
 
+class _SuggestionsCard extends StatelessWidget {
+  const _SuggestionsCard();
+
+  static const _items = [
+    'What do I take now?',
+    'Scan this medication',
+    'Read the instructions',
+    'Mark it as taken',
+    'When do I take Amoxicillin?',
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      children: [
+        for (final s in _items)
+          Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: _VC.bgCard,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _VC.divider),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0A13005A),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    s,
+                    style: const TextStyle(
+                      color: _VC.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: _VC.textSub,
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _GlassOrb extends StatelessWidget {
   const _GlassOrb({required this.morphT, required this.active});
 
@@ -677,7 +757,7 @@ class _GlassOrb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const size = 160.0;
+    const size = 180.0;
     return SizedBox(
       width: size,
       height: size,
@@ -700,29 +780,29 @@ class _OrbPainter extends CustomPainter {
     final r = size.width / 2;
 
     final glowPaint = Paint()
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 28)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 36)
       ..shader = RadialGradient(
         colors: [
-          (active ? _VC.orbPurple : _VC.orbBlue).withValues(alpha: 0.5),
-          _VC.orbBlue.withValues(alpha: 0.12),
+          (active ? _VC.orbPurple : _VC.orbBlue).withValues(alpha: 0.45),
+          _VC.orbBlue.withValues(alpha: 0.14),
           Colors.transparent,
         ],
-        stops: const [0.0, 0.6, 1.0],
-      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r * 1.2));
-    canvas.drawCircle(Offset(cx, cy), r * 1.2, glowPaint);
+        stops: const [0.0, 0.55, 1.0],
+      ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r * 1.3));
+    canvas.drawCircle(Offset(cx, cy), r * 1.3, glowPaint);
 
     final bodyPaint = Paint()
       ..shader = RadialGradient(
-        center: const Alignment(-0.3, -0.35),
-        radius: 1.0,
+        center: const Alignment(-0.35, -0.4),
+        radius: 1.05,
         colors: const [
-          _VC.orbHighlight,
-          _VC.orbBlue,
-          _VC.orbPurple,
-          Color(0xFFCDA8F5),
-          _VC.orbPink,
+          Color(0xFFFFFFFF),
+          Color(0xFFD6EEFF),
+          Color(0xFFA8C8FC),
+          Color(0xFFC4A8F5),
+          Color(0xFFE8C8F8),
         ],
-        stops: const [0.0, 0.25, 0.55, 0.78, 1.0],
+        stops: const [0.0, 0.22, 0.5, 0.78, 1.0],
       ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r));
     canvas.drawCircle(Offset(cx, cy), r, bodyPaint);
 
@@ -740,7 +820,7 @@ class _OrbPainter extends CustomPainter {
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16)
       ..shader = RadialGradient(
         colors: [
-          Colors.white.withValues(alpha: 0.5),
+          Colors.white.withValues(alpha: 0.7),
           Colors.white.withValues(alpha: 0.0),
         ],
       ).createShader(Rect.fromCenter(
@@ -755,10 +835,10 @@ class _OrbPainter extends CustomPainter {
       ..strokeWidth = 1.5
       ..shader = SweepGradient(
         colors: [
-          Colors.white.withValues(alpha: 0.3),
-          Colors.white.withValues(alpha: 0.0),
-          Colors.white.withValues(alpha: 0.15),
-          Colors.white.withValues(alpha: 0.3),
+          Colors.white.withValues(alpha: 0.55),
+          Colors.white.withValues(alpha: 0.05),
+          Colors.white.withValues(alpha: 0.28),
+          Colors.white.withValues(alpha: 0.55),
         ],
         startAngle: -pi / 4,
         endAngle: 2 * pi - pi / 4,
@@ -793,8 +873,15 @@ class _IconBtn extends StatelessWidget {
           color: _VC.bgCard,
           shape: BoxShape.circle,
           border: Border.all(color: _VC.divider),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A13005A),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
         ),
-        child: Icon(icon, color: _VC.textPrimary, size: 18),
+        child: Icon(icon, color: _VC.textPrimary, size: 20),
       ),
     );
     if (tooltip != null) return Tooltip(message: tooltip!, child: btn);
