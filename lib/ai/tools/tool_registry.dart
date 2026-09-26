@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import '../../state/app_state.dart';
 import 'ai_tool.dart';
 import 'medication_tools.dart';
+import 'vision_tools.dart';
+import 'voice_tools.dart';
 
 /// Central registry and dispatcher for internal AI and MCP tools.
 class AiToolRegistry {
@@ -30,6 +32,39 @@ class AiToolRegistry {
     ]);
     return registry;
   }
+
+  /// Creates a complete registry loaded with medication tools, voice TTS, and visual scanning tools.
+  factory AiToolRegistry.withAllTools(
+    AppState state, {
+    DateTime Function()? clock,
+    Future<void> Function(String text)? onSpeak,
+    Future<void> Function(VisualModeRequest request)? onStartVisualMode,
+    void Function(VisualVerificationCardData data)? onShowVisualResult,
+  }) {
+    final registry = AiToolRegistry.withMedicationTools(state, clock: clock);
+    registry.registerVoiceTools(onSpeak: onSpeak);
+    registry.registerVisionTools(
+      onStartVisualMode: onStartVisualMode,
+      onShowResult: onShowVisualResult,
+    );
+    return registry;
+  }
+
+  /// Registers TTS voice tools (both `speak_to_user` and alias `speak`).
+  void registerVoiceTools({Future<void> Function(String text)? onSpeak}) {
+    register(SpeakTool(onSpeak: onSpeak, toolName: 'speak_to_user'));
+    register(SpeakTool(onSpeak: onSpeak, toolName: 'speak'));
+  }
+
+  /// Registers camera visual scanning tools (`start_visual_mode` and `show_visual_verification_result`).
+  void registerVisionTools({
+    Future<void> Function(VisualModeRequest request)? onStartVisualMode,
+    void Function(VisualVerificationCardData data)? onShowResult,
+  }) {
+    register(StartVisualModeTool(onStartVisualMode: onStartVisualMode));
+    register(ShowVisualVerificationResultTool(onShowResult: onShowResult));
+  }
+
 
   /// Register a single tool.
   void register(AiTool tool) {

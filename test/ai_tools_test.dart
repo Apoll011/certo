@@ -287,4 +287,224 @@ void main() {
       expect(events.any((e) => e is AiResponseCompletedEvent), isTrue);
     });
   });
+
+  group('Voice & ElevenLabs Integration (SpeakTool)', () {
+    test('SpeakTool synthesizes spoken audio and invokes onSpeak callback', () async {
+      String? spokenText;
+      final speakTool = SpeakTool(
+        onSpeak: (text) async {
+          spokenText = text;
+        },
+      );
+
+      final res = await speakTool.execute({'text': 'It is time for your Amoxicillin.'});
+      expect(res.success, isTrue);
+      expect(spokenText, 'It is time for your Amoxicillin.');
+
+      final emptyRes = await speakTool.execute({'text': ''});
+      expect(emptyRes.success, isFalse);
+    });
+
+    test('SpeakTool complies with OpenAI schema', () {
+      final speakTool = SpeakTool();
+      final schema = speakTool.toOpenAiTool();
+      expect(schema['type'], 'function');
+      final fn = schema['function'] as Map;
+      expect(fn['name'], 'speak_to_user');
+      expect((fn['parameters'] as Map)['required'], ['text']);
+    });
+  });
+
+  group('Vision & Visual Mode Tools', () {
+    test('StartVisualModeTool triggers visual mode with scheduled context', () async {
+      VisualModeRequest? capturedRequest;
+      final startVisualTool = StartVisualModeTool(
+        onStartVisualMode: (req) async {
+          capturedRequest = req;
+        },
+      );
+
+      final res = await startVisualTool.execute({
+        'reason': 'User asking is this my medication',
+        'expected_medication_name': 'Amoxicillin 500mg',
+      });
+
+      expect(res.success, isTrue);
+      expect(capturedRequest?.expectedMedicationName, 'Amoxicillin 500mg');
+    });
+
+    test('ShowVisualVerificationResultTool handles confirmed match correctly', () async {
+      VisualVerificationCardData? cardData;
+      final showResultTool = ShowVisualVerificationResultTool(
+        onShowResult: (data) => cardData = data,
+      );
+
+      final res = await showResultTool.execute({
+        'status': 'confirmed_match',
+        'identified_medication_name': 'Amoxicillin 500mg',
+        'category': 'Antibiotic · Oral tablet',
+        'message': 'This is your medication. It\'s scheduled for now.',
+        'expected_medication_name': 'Amoxicillin 500mg',
+        'next_dose_time': '9:00 AM',
+        'next_dose_instruction': '1 tablet · After meal',
+      });
+
+      expect(res.success, isTrue);
+      expect(cardData?.status, VisualVerificationStatus.confirmedMatch);
+      expect(cardData?.canConfirm, isTrue);
+      expect(cardData?.identifiedMedicationName, 'Amoxicillin 500mg');
+    });
+
+    test('ShowVisualVerificationResultTool handles confirmed mismatch correctly', () async {
+      VisualVerificationCardData? cardData;
+      final showResultTool = ShowVisualVerificationResultTool(
+        onShowResult: (data) => cardData = data,
+      );
+
+      final res = await showResultTool.execute({
+        'status': 'confirmed_mismatch',
+        'expected_medication_name': 'Amoxicillin 500mg',
+        'next_dose_instruction': '1 tablet · After meal',
+      });
+
+      expect(res.success, isTrue);
+      expect(cardData?.status, VisualVerificationStatus.confirmedMismatch);
+      expect(cardData?.canConfirm, isFalse);
+    });
+
+    test('ShowVisualVerificationResultTool handles uncertain safety state', () async {
+      VisualVerificationCardData? cardData;
+      final showResultTool = ShowVisualVerificationResultTool(
+        onShowResult: (data) => cardData = data,
+      );
+
+      final res = await showResultTool.execute({
+        'status': 'uncertain',
+      });
+
+      expect(res.success, isTrue);
+      expect(cardData?.status, VisualVerificationStatus.uncertain);
+      expect(cardData?.canConfirm, isFalse);
+    });
+  });
+
+  group('Multimodal ChatMessage & Visual Verification Flow', () {
+    test('ChatMessage formats image base64 correctly for OpenAI/DeepSeek Vision', () {
+      final msg = ChatMessage.userWithImage(
+        'Is this my medication?',
+        imageBase64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      );
+
+      final json = msg.toJson();
+      expect(json['role'], 'user');
+      final parts = json['content'] as List;
+      expect(parts.length, 2);
+      expect(parts[0]['type'], 'text');
+      expect(parts[0]['text'], 'Is this my medication?');
+      expect(parts[1]['type'], 'image_url');
+      expect((parts[1]['image_url'] as Map)['url'], startsWith('data:image/jpeg;base64,'));
+      expect(msg.textContent, 'Is this my medication?');
+    });
+
+    test('AI Assistant handles image verification query with tools', () async {
+      VisualVerificationCardData? displayedCard;
+      String? spokenVoice;
+
+      final fullRegistry = AiToolRegistry.withAllTools(
+        state,
+        onSpeak: (text) async => spokenVoice = text,
+        onShowVisualResult: (data) => displayedCard = data,
+      );
+
+      int round = 0;
+      final mockClient = MockClient((request) async {
+        round++;
+        if (round == 1) {
+          // Model inspects the photo and invokes show_visual_verification_result
+          return http.Response(
+            jsonEncode({
+              'id': 'chatcmpl-vis-1',
+              'choices': [
+                {
+                  'index': 0,
+                  'finish_reason': 'tool_calls',
+                  'message': {
+                    'role': 'assistant',
+                    'content': null,
+                    'tool_calls': [
+                      {
+                        'id': 'call_vis_1',
+                        'type': 'function',
+                        'function': {
+                          'name': 'show_visual_verification_result',
+                          'arguments': jsonEncode({
+                            'status': 'confirmed_match',
+                            'identified_medication_name': 'Amoxicillin 500mg',
+                            'category': 'Antibiotic · Oral tablet',
+                            'message': 'This is your medication. It\'s scheduled for now.',
+                            'next_dose_time': '9:00 AM',
+                            'next_dose_instruction': '1 tablet · After meal',
+                          }),
+                        },
+                      },
+                      {
+                        'id': 'call_speak_1',
+                        'type': 'function',
+                        'function': {
+                          'name': 'speak_to_user',
+                          'arguments': jsonEncode({
+                            'text': 'Yes, this is your Amoxicillin 500mg scheduled for now.',
+                          }),
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        } else {
+          return http.Response(
+            jsonEncode({
+              'id': 'chatcmpl-vis-2',
+              'choices': [
+                {
+                  'index': 0,
+                  'finish_reason': 'stop',
+                  'message': {
+                    'role': 'assistant',
+                    'content': 'Verified: This is your Amoxicillin 500mg scheduled for now.',
+                  },
+                },
+              ],
+            }),
+            200,
+          );
+        }
+      });
+
+      final openAiClient = OpenAiCompatibleClient(
+        apiKey: 'test-key',
+        httpClient: mockClient,
+      );
+
+      final assistant = AiAssistantService(
+        client: openAiClient,
+        tools: fullRegistry,
+      );
+
+      final result = await assistant.verifyMedicationImage(
+        imageBase64: 'fake-photo-bytes',
+        userPrompt: 'Is this my medication?',
+      );
+
+      expect(displayedCard?.status, VisualVerificationStatus.confirmedMatch);
+      expect(displayedCard?.identifiedMedicationName, 'Amoxicillin 500mg');
+      expect(spokenVoice, 'Yes, this is your Amoxicillin 500mg scheduled for now.');
+      expect(result.executedTools, contains('show_visual_verification_result'));
+      expect(result.executedTools, contains('speak_to_user'));
+    });
+  });
 }
+

@@ -81,6 +81,46 @@ class ChatMessage {
   factory ChatMessage.user(String content) =>
       ChatMessage(role: 'user', content: content);
 
+  /// Creates a multimodal user message containing text and a base64 encoded image.
+  factory ChatMessage.userWithImage(
+    String text, {
+    required String imageBase64,
+    String mimeType = 'image/jpeg',
+  }) {
+    final cleanBase64 = imageBase64.contains(',')
+        ? imageBase64.split(',').last
+        : imageBase64;
+    return ChatMessage(
+      role: 'user',
+      content: [
+        {'type': 'text', 'text': text},
+        {
+          'type': 'image_url',
+          'image_url': {
+            'url': 'data:$mimeType;base64,$cleanBase64',
+          },
+        },
+      ],
+    );
+  }
+
+  /// Creates a multimodal user message containing text and an image URL.
+  factory ChatMessage.userWithImageUrl(
+    String text, {
+    required String imageUrl,
+  }) {
+    return ChatMessage(
+      role: 'user',
+      content: [
+        {'type': 'text', 'text': text},
+        {
+          'type': 'image_url',
+          'image_url': {'url': imageUrl},
+        },
+      ],
+    );
+  }
+
   factory ChatMessage.assistant(
     String? content, {
     List<ToolCall>? toolCalls,
@@ -112,7 +152,7 @@ class ChatMessage {
 
     return ChatMessage(
       role: json['role'] as String? ?? 'user',
-      content: json['content'] as String?,
+      content: json['content'],
       name: json['name'] as String?,
       toolCallId: json['tool_call_id'] as String?,
       toolCalls: toolCalls,
@@ -120,12 +160,29 @@ class ChatMessage {
   }
 
   final String role; // 'system', 'user', 'assistant', 'tool'
-  final String? content;
+
+  /// Either [String] or [List<Map<String, dynamic>>] for multimodal content.
+  final dynamic content;
   final String? name;
   final String? toolCallId;
   final List<ToolCall>? toolCalls;
 
   bool get hasToolCalls => toolCalls != null && toolCalls!.isNotEmpty;
+
+  /// Returns the text content extracted from either plain string or multimodal parts.
+  String get textContent {
+    if (content is String) return content as String;
+    if (content is List) {
+      final buffer = StringBuffer();
+      for (final item in content as List) {
+        if (item is Map && item['type'] == 'text') {
+          buffer.write(item['text']?.toString() ?? '');
+        }
+      }
+      return buffer.toString();
+    }
+    return '';
+  }
 
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{
@@ -140,6 +197,7 @@ class ChatMessage {
     return map;
   }
 }
+
 
 /// Token usage metadata.
 class UsageInfo {

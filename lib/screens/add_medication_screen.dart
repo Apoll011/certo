@@ -5,13 +5,15 @@ import '../l10n/app_localizations.dart';
 import '../state/app_state.dart';
 import '../theme/app_spacing.dart';
 import '../utils/format.dart';
-import '../utils/ui.dart';
 import '../widgets/app_card.dart';
+
 import '../widgets/icon_badge.dart';
 import '../widgets/pill_icon.dart';
 import '../widgets/screen_header.dart';
 import 'manual_medication_form_screen.dart';
 import 'medication_detail_screen.dart';
+import 'visual_verification_screen.dart';
+
 
 /// Entry point for adding a medication (scan or manual).
 class AddMedicationScreen extends StatelessWidget {
@@ -50,9 +52,9 @@ class AddMedicationScreen extends StatelessWidget {
                     icon: Icons.camera_alt_outlined,
                     title: l10n.scanPackage,
                     subtitle: l10n.scanPackageSubtitle,
-                    onTap: () =>
-                        showComingSoon(context, l10n.cameraComingSoon),
+                    onTap: () => showVisualVerificationScreen(context),
                   ),
+
                   const SizedBox(height: AppSpacing.md),
                   _optionCard(
                     context,

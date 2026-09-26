@@ -7,3 +7,6 @@ export 'openai_client.dart';
 export 'tools/ai_tool.dart';
 export 'tools/medication_tools.dart';
 export 'tools/tool_registry.dart';
+export 'tools/vision_tools.dart';
+export 'tools/voice_tools.dart';
+

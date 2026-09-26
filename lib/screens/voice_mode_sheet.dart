@@ -6,8 +6,14 @@ import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../ai/ai.dart';
+import '../config/app_config.dart';
 import '../services/elevenlabs_service.dart';
+import '../state/app_state.dart';
+import 'visual_verification_screen.dart';
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Design tokens – dark navy voice palette matching mockup
@@ -248,15 +254,62 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
       return;
     }
 
+    final lower = spoken.toLowerCase();
+    // Fast-path visual mode if the user verbally asks "is this my medication" or "verify this"
+    if (lower.contains('is this my') ||
+        lower.contains('verify this') ||
+        lower.contains('check my medication') ||
+        lower.contains('check this') ||
+        lower.contains('scan this') ||
+        lower.contains('take a photo')) {
+      if (mounted) {
+        setState(() => _phase = _VoicePhase.idle);
+        showVisualVerificationScreen(context);
+        return;
+      }
+    }
+
+    String answerToSpeak = spoken;
+    final appState = Provider.of<AppState>(context, listen: false);
+
+    if (AppConfig.aiApiKey.isNotEmpty) {
+      try {
+        final assistant = appState.createAiAssistant();
+        assistant.tools.registerVisionTools(
+          onStartVisualMode: (request) async {
+            if (mounted) {
+              await showVisualVerificationScreen(context);
+            }
+          },
+        );
+
+        final result = await assistant.sendMessage(
+          spoken,
+          onEvent: (event) {
+            if (event is AiToolCallStartedEvent) {
+              debugPrint('VoiceMode: calling tool "${event.toolName}"');
+            }
+          },
+        );
+        if (result.response.trim().isNotEmpty) {
+          answerToSpeak = result.response;
+        }
+      } catch (e) {
+        debugPrint('VoiceMode: AI Assistant error: $e');
+        answerToSpeak = spoken;
+      }
+    }
+
     if (mounted) {
       setState(() {
-        _aiResponse = spoken;
+        _aiResponse = answerToSpeak;
       });
     }
 
-    // Speak back what was transcribed
-    await _svc.speak(spoken);
+    // Speak response back to user via ElevenLabs TTS
+    await _svc.speak(answerToSpeak);
   }
+
 
   Future<void> _playBufferedAudio() async {
     if (_audioBuffer.isEmpty) {
@@ -563,13 +616,14 @@ class _VoiceModeScreenState extends State<VoiceModeScreen>
                                 ),
                                 SizedBox(width: 8),
                                 Text(
-                                  'Speaking back what you said:',
+                                  'AI Assistant response:',
                                   style: TextStyle(
                                     color: _VC.orbPurple,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+
                               ],
                             ),
                             const SizedBox(height: 8),
@@ -871,11 +925,13 @@ class _WaveformBars extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const _suggestions = [
+  'Is this my medication?',
   'I took my morning medication',
   'When is my next dose of Amoxicillin?',
   'Remind me to take Vitamin D at 8 PM',
   'What medications do I have today?',
 ];
+
 
 class _SuggestionsCard extends StatelessWidget {
   const _SuggestionsCard();

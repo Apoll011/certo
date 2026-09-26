@@ -83,7 +83,7 @@ class AiAssistantService {
   final String Function()? systemPromptProvider;
   final int maxToolIterations;
 
-  /// Default system prompt template.
+  /// Default system prompt template with full voice, vision, and medication safety rules.
   static String defaultSystemPrompt({
     String? userName,
     DateTime? now,
@@ -108,17 +108,34 @@ You have internal tools to interact directly with the app:
 - `mark_medication_taken`: mark or unmark a dose as taken for today.
 - `snooze_medication`: snooze an active reminder for N minutes.
 - `get_user_summary`: overview of total medications and adherence today.
+- `speak_to_user` (or `speak`): synthesizes audio using ElevenLabs TTS to speak aloud to the user.
+- `start_visual_mode`: activates the camera scanner when visual verification is requested.
+- `show_visual_verification_result`: displays the verification card on the scanner screen.
 
 Guidelines:
-1. Always check the current schedule or run tools when the user asks about their medications, doses, or what to take.
-2. When creating or editing medications, confirm the details (name, dosage, times) clearly with the user.
-3. Be reassuring, concise, and helpful. Prioritize safety and clarity above all else. Never invent or hallucinate medication instructions.
+1. Schedule Awareness:
+   Always check the current schedule via `get_next_medications` when the user asks about their medications, what to take, or whether a pill/box is theirs.
+2. Visual Verification Protocol ("Is this my medication?"):
+   When the user asks "Is this my medication?", "What is this pill?", or asks to verify what they are holding:
+   - Step A: Call `get_next_medications` to find what medication is currently due.
+   - Step B: If you do not yet have a picture, call `start_visual_mode` with the expected medication details so the app opens the camera scanner and captures a frame.
+   - Step C: Once a picture is provided, inspect the text on the box, bottle label, blister pack, or organizer compartment.
+   - Step D: ALWAYS call `show_visual_verification_result` with one of the 3 strict Certo states:
+     • `confirmed_match`: The image clearly shows the exact medication and dosage expected right now.
+     • `confirmed_mismatch`: The image shows a medication, but it is NOT the one scheduled for now.
+     • `uncertain`: The photo is blurry, unreadable, or you are not 100% confident. NEVER guess or assume.
+   - Step E: Call `speak_to_user` with a short, calm sentence confirming the result so the user hears it immediately.
+3. Clarifying Questions:
+   If the user's intent is ambiguous, or if essential information is missing, ask concise clarifying questions before modifying their schedule.
+4. Calm & Reassuring Tone:
+   Keep verbal and written answers concise, reassuring, and clear. Patient safety is top priority.
 '''.trim();
   }
 
-  /// Sends a message and executes any required tool calls in an autonomous loop.
+  /// Sends a message (either a [String] or a [ChatMessage], including multimodal messages with images)
+  /// and executes any required tool calls in an autonomous loop.
   Future<AiAssistantResult> sendMessage(
-    String userMessage, {
+    dynamic userMessage, {
     List<ChatMessage>? history,
     void Function(AiAssistantEvent event)? onEvent,
   }) async {
@@ -139,8 +156,13 @@ Guidelines:
       }
     }
 
-    // 3. User message
-    conversation.add(ChatMessage.user(userMessage));
+    // 3. User message (support plain String or ChatMessage)
+    if (userMessage is ChatMessage) {
+      conversation.add(userMessage);
+    } else {
+      conversation.add(ChatMessage.user(userMessage.toString()));
+    }
+
 
     onEvent?.call(const AiThinkingEvent());
 
@@ -232,4 +254,16 @@ Guidelines:
       executedTools: executedToolNames,
     );
   }
+
+  /// Convenience helper to verify a medication photo against the user's schedule.
+  Future<AiAssistantResult> verifyMedicationImage({
+    required String imageBase64,
+    String userPrompt = 'Is this my medication for now?',
+    List<ChatMessage>? history,
+    void Function(AiAssistantEvent event)? onEvent,
+  }) {
+    final msg = ChatMessage.userWithImage(userPrompt, imageBase64: imageBase64);
+    return sendMessage(msg, history: history, onEvent: onEvent);
+  }
 }
+
